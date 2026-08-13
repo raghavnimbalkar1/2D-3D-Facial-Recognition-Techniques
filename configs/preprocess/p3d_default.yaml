@@ -1,0 +1,5 @@
+# Default 3D preprocessing: depth -> range image 64x64, z-normalised.
+range:
+  size: 64
+  fill: nearest
+  z_norm: std

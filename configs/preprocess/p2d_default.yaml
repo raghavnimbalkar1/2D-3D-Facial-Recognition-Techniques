@@ -1,0 +1,7 @@
+# Default 2D preprocessing: detect -> align (112/64) -> no illumination norm.
+align:
+  size_112: 112
+  size_64: 64
+illum:
+  method: none
+  params: {}

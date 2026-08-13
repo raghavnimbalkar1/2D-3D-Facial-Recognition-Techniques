@@ -1,0 +1,18 @@
+landmarks:
+  backend: mediapipe_facemesh
+  refine_landmarks: true
+  n_points: 468
+  nose_tip_index: 1
+  model_asset_path: null
+pose:
+  method: procrustes_svd
+range:
+  size: 64
+  size_dense: 128
+  topology: mediapipe_fixed
+  fill: nearest
+  z_norm: std
+normals:
+  method: sobel
+curvature:
+  method: finite_difference

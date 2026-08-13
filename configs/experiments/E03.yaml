@@ -1,0 +1,8 @@
+id: E03
+name: head_to_head
+dataset: toy
+protocols: [P1_closed, P2_disjoint]
+seeds: [0, 1, 2, 3, 4]
+arms:
+  - {key: best-2D, feature: pca, matcher: nn_cosine}
+  - {key: best-3D, feature: depth_pca, matcher: nn_cosine}

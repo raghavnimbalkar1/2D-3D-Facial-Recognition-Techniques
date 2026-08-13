@@ -1,0 +1,3 @@
+feature: curv_hist
+params:
+  bins: 16

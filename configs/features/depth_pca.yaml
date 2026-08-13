@@ -1,0 +1,6 @@
+# Eigendepth: PCA on 64x64 range images (direct 2D-vs-3D analogue)
+feature: depth_pca
+params:
+  variance_keep: 0.95
+  max_components: 150
+  drop_first_k: 0

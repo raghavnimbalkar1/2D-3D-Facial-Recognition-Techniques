@@ -1,0 +1,3 @@
+feature: lda
+params:
+  max_components: 50

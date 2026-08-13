@@ -1,0 +1,28 @@
+# data / results
+data/
+results/runs/
+results/figures/
+results/tables/
+.env
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.coverage.*
+
+# os
+.DS_Store
+
+# editor
+.idea/
+.vscode/
+*.swp

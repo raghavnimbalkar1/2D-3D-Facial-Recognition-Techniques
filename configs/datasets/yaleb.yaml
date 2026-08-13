@@ -1,0 +1,3 @@
+name: yaleb
+preprocess_2d: p2d_default
+preprocess_3d: p3d_pseudo

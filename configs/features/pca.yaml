@@ -1,0 +1,6 @@
+# PCA / eigenfaces (2D)
+feature: pca
+params:
+  variance_keep: 0.95
+  max_components: 150
+  drop_first_k: 0

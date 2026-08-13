@@ -1,0 +1,4 @@
+matcher: svm_rbf
+params:
+  C: 1.0
+  gamma: scale

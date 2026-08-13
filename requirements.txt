@@ -1,0 +1,19 @@
+numpy
+scipy
+pandas
+opencv-python>=4.9
+scikit-image
+scikit-learn
+matplotlib
+seaborn
+pyyaml
+typer
+tqdm
+joblib
+psutil
+pytest
+pytest-cov
+ruff
+black
+# Optional: mediapipe (Yale B pseudo-3D FaceMesh path)
+# Optional: insightface onnxruntime (ArcFace; frozen, research-use license)

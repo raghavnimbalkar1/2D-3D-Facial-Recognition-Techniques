@@ -1,0 +1,5 @@
+feature: lbp
+params:
+  points: 8
+  radius: 1
+  blocks: 8

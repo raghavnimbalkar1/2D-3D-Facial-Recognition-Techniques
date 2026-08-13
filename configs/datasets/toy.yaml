@@ -1,0 +1,6 @@
+# Toy procedural dataset: 12 subjects x 15 captures, deterministic (seed 0).
+name: toy
+n_subjects: 12
+n_samples: 15
+size: 160
+seed: 0

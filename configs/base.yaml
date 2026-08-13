@@ -1,0 +1,23 @@
+# Base defaults for every ivafr config. Child configs merge over these.
+datasets:
+  preprocess_2d: p2d_default
+  preprocess_3d: p3d_default
+
+preprocess:
+  align:
+    size_112: 112
+    size_64: 64
+  illum:
+    method: none
+    params: {}
+  range:
+    size: 64
+    fill: nearest
+    z_norm: std
+
+features: {}
+matchers: {}
+
+report:
+  tables: [T1_main_comparison, T3_verification]
+  figures: [cmc, roc, det, pr, confusion, score_hist]

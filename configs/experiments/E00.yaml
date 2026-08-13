@@ -1,0 +1,24 @@
+# E00 — M0 smoke milestone: PCA(2D) + DepthPCA(3D), both protocols, 5 seeds.
+# Definition of done for M0: rank-1 + EER + one figure via `ivafr run --exp E00`.
+id: E00
+name: m0_smoke_pca_vs_depthpca
+dataset: toy
+protocols: [P1_closed, P2_disjoint]
+seeds: [0, 1, 2, 3, 4]
+preprocess:
+  2d: p2d_default
+  3d: p3d_default
+arms:
+  - key: 2D-PCA
+    feature: pca
+    matcher: nn_cosine
+  - key: 3D-DepthPCA
+    feature: depth_pca
+    matcher: nn_cosine
+evaluate:
+  identification: true
+  verification: true
+  timing: false
+report:
+  tables: [T1_main_comparison]
+  figures: [cmc, roc, det, score_hist, confusion]

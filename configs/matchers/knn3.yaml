@@ -1,0 +1,3 @@
+matcher: knn3
+params:
+  k: 3

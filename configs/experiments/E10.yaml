@@ -1,0 +1,11 @@
+id: E10
+name: single_pass_timing
+dataset: toy
+protocols: [P2_disjoint]
+seeds: [0, 1, 2, 3, 4]
+arms:
+  - {key: 2D-PCA, feature: pca, matcher: nn_cosine}
+evaluate:
+  identification: false
+  verification: false
+  timing: true

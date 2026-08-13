@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ivafr"
+version = "0.1.0"
+description = "Config-driven benchmark framework: comparative analysis of 2D vs 3D facial recognition"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "2D-3D Face Project" }]
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "opencv-python>=4.9",
+    "scikit-image",
+    "scikit-learn",
+    "matplotlib",
+    "pyyaml",
+    "typer",
+    "tqdm",
+    "joblib",
+    "psutil",
+]
+
+[project.optional-dependencies]
+full = ["mediapipe"]
+deep2d = [
+    "insightface",
+    "onnxruntime",
+]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "black",
+]
+
+[project.scripts]
+ivafr = "ivafr.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=ivafr --cov-report=term-missing"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
