@@ -13,6 +13,7 @@ One run directory per (experiment, arm, protocol, seed):
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,8 @@ import pandas as pd
 
 from ivafr.config import ArmConfig, ExperimentConfig
 from ivafr.datasets.manifest import read_manifest
-from ivafr.datasets.splits import make_split, summary as split_summary
+from ivafr.datasets.splits import make_split
+from ivafr.datasets.splits import summary as split_summary
 from ivafr.evaluation.identification import evaluate_identification
 from ivafr.evaluation.verification import evaluate_verification
 from ivafr.logging_utils import get_logger
@@ -39,7 +41,7 @@ log = get_logger("pipelines.run_experiment")
 _ARM_MODALITY = {
     "pca": "2d", "lda": "2d", "lbp": "2d", "hog": "2d", "gabor": "2d", "arcface": "2d",
     "depth_pca": "3d", "depth_lbp": "3d", "normal_hog": "3d", "curv_hist": "3d",
-    "lmk3d": "3d", "icp": "3d", "depth_lbp": "3d", "normal_hog": "3d", "curv_hist": "3d",
+    "lmk3d": "3d", "icp": "3d",
 }
 
 
@@ -60,7 +62,7 @@ def _train_ids(split: dict[str, Any], manifest: pd.DataFrame) -> list[str]:
 
 
 def _subject_of(manifest: pd.DataFrame) -> dict[str, str]:
-    return dict(zip(manifest["sample_id"].astype(str), manifest["subject_id"]))
+    return dict(zip(manifest["sample_id"].astype(str), manifest["subject_id"], strict=True))
 
 
 def _condition_of(manifest: pd.DataFrame) -> dict[str, str]:
@@ -86,6 +88,10 @@ def run_experiment(
     data_root = Path(data_root)
     results_root = Path(results_root)
     manifest = read_manifest(data_root / "processed" / exp.dataset / "manifest.csv")
+    modalities = set(manifest["data_modality"].astype(str))
+    if len(modalities) != 1:
+        raise ValueError(f"One experiment cannot mix data modalities: {sorted(modalities)}")
+    data_modality = next(iter(modalities))
     subject_of = _subject_of(manifest)
     condition_of = _condition_of(manifest)
     interim = data_root / "interim" / exp.dataset
@@ -106,24 +112,52 @@ def run_experiment(
                     log.info("Skipping existing %s", run_dir)
                     run_dirs.append(run_dir)
                     continue
-                metrics = _evaluate_arm(
-                    run_dir=run_dir,
-                    arm=arm,
-                    split=split,
-                    manifest=manifest,
-                    interim=interim,
-                    pool_ids=pool_ids,
-                    train_ids=train_ids,
-                    subject_of=subject_of,
-                    condition_of=condition_of,
-                    do_identification=exp.evaluate_identification,
-                    do_verification=exp.evaluate_verification,
+                robustness_conditions = (
+                    exp.robustness.get("conditions", []) if exp.robustness else []
                 )
+                evaluations = [("clean", None)] + [
+                    (str(c["name"]), c) for c in robustness_conditions
+                ]
+                condition_metrics = {}
+                metrics = None
+                for condition_name, augmentation in evaluations:
+                    current = _evaluate_arm(
+                        run_dir=run_dir,
+                        arm=arm,
+                        split=split,
+                        manifest=manifest,
+                        interim=interim,
+                        pool_ids=pool_ids,
+                        train_ids=train_ids,
+                        subject_of=subject_of,
+                        condition_of=condition_of,
+                        do_identification=exp.evaluate_identification,
+                        do_verification=exp.evaluate_verification,
+                        do_timing=exp.evaluate_timing,
+                        probe_augmentation=augmentation,
+                    )
+                    if metrics is None:
+                        metrics = current
+                    if condition_name != "clean":
+                        condition_metrics[condition_name] = {
+                            "rank1": current.get("identification", {}).get("rank1"),
+                            "n": current.get("identification", {}).get("n_probe", 0),
+                        }
+                assert metrics is not None
+                if condition_metrics:
+                    metrics["robustness"] = {
+                        "type": exp.robustness.get("type", "unknown"),
+                        "conditions": condition_metrics,
+                    }
+                    if "identification" in metrics:
+                        metrics["identification"]["per_condition"] = condition_metrics
                 _write_meta(run_dir, exp)
                 metrics["exp_id"] = exp.id
                 metrics["arm"] = arm.key
                 metrics["protocol"] = protocol
                 metrics["seed"] = seed
+                metrics["dataset"] = {"name": exp.dataset, "data_modality": data_modality}
+                metrics["data_modality"] = data_modality
                 metrics_path.write_text(json.dumps(metrics, indent=2, sort_keys=True))
                 run_dirs.append(run_dir)
                 log.info("Wrote %s", metrics_path)
@@ -142,11 +176,17 @@ def _evaluate_arm(
     condition_of: dict[str, str],
     do_identification: bool,
     do_verification: bool,
+    probe_augmentation: dict | None = None,
+    do_timing: bool = False,
 ) -> dict[str, Any]:
     """Extract -> match -> evaluate for one arm; returns metrics dict."""
     seed = int(split["seed"])
+    started = time.perf_counter()
     set_all_seeds(seed)
     modality = _ARM_MODALITY.get(arm.feature, "2d")
+    data_modalities = set(manifest["data_modality"].astype(str))
+    if modality == "3d" and data_modalities != {"synthetic_toy"}:
+        raise ValueError("Pseudo-3D arms are restricted to synthetic_toy data in v2")
     gallery_ids, probe_ids = split["gallery_ids"], split["probe_ids"]
 
     X_train, X_gallery, X_probe, *_ = extract_features(
@@ -159,6 +199,7 @@ def _evaluate_arm(
         interim=interim,
         modality=modality,
         seed=seed,
+        probe_augmentation=probe_augmentation,
     )
 
     matcher = get_matcher(arm.matcher)(arm.matcher_params).fit(X_train, np.asarray(train_ids))
@@ -187,6 +228,15 @@ def _evaluate_arm(
         np.save(run_dir / "genuine_scores.npy", g_scores)
         np.save(run_dir / "impostor_scores.npy", i_scores)
         _artifacts_verification(run_dir, arm.key, ver, g_scores, i_scores)
+    if do_timing:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        metrics["timing"] = {
+            "total_ms": float(elapsed_ms),
+            "train_samples": len(train_ids),
+            "gallery_samples": len(gallery_ids),
+            "probe_samples": len(probe_ids),
+            "ms_per_probe": float(elapsed_ms / max(len(probe_ids), 1)),
+        }
     return metrics
 
 

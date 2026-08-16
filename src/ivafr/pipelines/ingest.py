@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from ivafr.datasets.manifest import audit, audit_report, samples_to_manifest, write_manifest
@@ -28,6 +29,7 @@ def ingest(dataset: str, data_root: str | Path, anonymize: bool = False) -> Path
     log.info("Discovering %s under %s", dataset, data_root / "raw")
     samples = adapter.discover()
     log.info("Discovered %d samples", len(samples))
+    _guard_duplicate_yaleb(dataset, samples)
     if anonymize:
         samples = [_anonymize(s) for s in samples]
 
@@ -39,6 +41,22 @@ def ingest(dataset: str, data_root: str | Path, anonymize: bool = False) -> Path
     out_path = out_dir / "manifest.csv"
     write_manifest(manifest, out_path)
     return out_path
+
+
+def _guard_duplicate_yaleb(dataset: str, samples: list) -> None:
+    """Refuse a Yale B mirror whose files are pixel-identical duplicates."""
+    if dataset != "yaleb" or len(samples) < 2:
+        return
+    hashes = {
+        hashlib.sha256(s.path_2d.read_bytes()).hexdigest()
+        for s in samples
+        if s.path_2d is not None and s.path_2d.is_file()
+    }
+    if len(hashes) == 1:
+        raise ValueError(
+            "Yale B input contains one identical pixel file repeated across all "
+            f"{len(samples)} samples; refusing to benchmark a corrupted mirror"
+        )
 
 
 def _anonymize(sample):

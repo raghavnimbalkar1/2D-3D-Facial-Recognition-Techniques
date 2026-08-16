@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from ivafr.datasets.manifest import (
     MANIFEST_COLUMNS,
     audit,
-    samples_to_manifest,
     validate_manifest,
 )
 
@@ -60,6 +58,7 @@ def test_audit_fails_on_single_sample_subject():
             "nosetip_ok": [True] * 3,
             "quality_flag": [""] * 3,
             "notes": ["NA"] * 3,
+            "data_modality": ["synthetic_toy"] * 3,
         }
     )
     with pytest.raises(ValueError, match="genuine pairs"):
@@ -91,6 +90,7 @@ def test_invalid_subject_id_rejected():
             "nosetip_ok": [False],
             "quality_flag": [""],
             "notes": ["NA"],
+            "data_modality": ["synthetic_toy"],
         }
     )
     with pytest.raises(ValueError, match="canonical"):

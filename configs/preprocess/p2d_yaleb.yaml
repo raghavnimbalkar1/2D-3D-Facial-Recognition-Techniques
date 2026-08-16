@@ -1,0 +1,17 @@
+# Real Yale B 2D preprocessing. The detector model is supplied through
+# IVAFR_FACE_DNN_PROTO and IVAFR_FACE_DNN_MODEL or by replacing null paths.
+detector:
+  method: dnn
+  proto: null
+  model: null
+  confidence: 0.05
+  enhance: gamma
+  gamma: 0.35
+align:
+  size_112: 112
+  size_64: 64
+illum:
+  method: clahe
+  params:
+    clip_limit: 2.0
+    grid: 8

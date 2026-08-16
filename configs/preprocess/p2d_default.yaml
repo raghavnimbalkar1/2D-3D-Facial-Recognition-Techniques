@@ -1,4 +1,6 @@
-# Default 2D preprocessing: detect -> align (112/64) -> no illumination norm.
+# Default toy/CI 2D preprocessing: detect -> align (112/64).
+detector:
+  method: haar
 align:
   size_112: 112
   size_64: 64

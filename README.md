@@ -17,12 +17,12 @@ This sprint focuses on two data sources:
   exact depth maps, and landmarks. This is used for development and CI.
 - **Extended Yale Face Database B:** real frontal face images captured under
   varied lighting conditions. Raw Yale B images are not included in this
-  repository.
+  repository and are used for the 2D benchmark only this sprint.
 
 The 3D modality is pseudo-3D rather than sensor-based. Toy data provides
-ground-truth depth; Yale B is intended to use MediaPipe FaceMesh landmarks to
-construct a monocular geometric representation. Real depth sensors, point
-cloud processing, ICP, and depth CNNs are outside the current scope.
+ground-truth depth. Yale B pseudo-3D is currently environment-blocked after
+three failed MediaPipe runtime paths. Real depth sensors, point-cloud
+processing, ICP, and depth CNNs are outside the current scope.
 
 ## Methodology
 
@@ -52,7 +52,7 @@ make setup
 make all
 ```
 
-For the optional MediaPipe pseudo-3D path, install the additional dependency:
+For the optional toy pseudo-3D path, install the additional dependency:
 
 ```bash
 python -m pip install -e '.[dev,full]'
@@ -85,12 +85,19 @@ Then run the dataset stages:
 
 ```bash
 ivafr ingest --dataset yaleb --data-root data
-ivafr preprocess --dataset yaleb --data-root data --modality both
+ivafr preprocess --dataset yaleb --data-root data --modality 2d
 ```
 
-Yale B images remain local and are never copied into result artifacts. Results
-using the geometric path must identify the modality as `pseudo3d`; they should
-not be interpreted as measurements from a physical 3D sensor.
+Set the OpenCV DNN detector model paths before preprocessing real Yale B:
+
+```bash
+export IVAFR_FACE_DNN_PROTO=/path/to/deploy.prototxt
+export IVAFR_FACE_DNN_MODEL=/path/to/res10_300x300_ssd_iter_140000.caffemodel
+```
+
+Yale B images remain local and are never copied into result artifacts. Real
+Yale B metrics are tagged `data_modality: real`; toy 3D and fusion metrics are
+tagged `data_modality: synthetic_toy` and must not be merged with real rows.
 
 ## Repository layout
 
@@ -106,10 +113,11 @@ results/       Generated runs, figures, tables, and summaries
 ## Current status
 
 The toy pipeline is the reproducible development path. Yale B ingestion and
-manifest generation are implemented, while the complete real-data FaceMesh
-preprocessing and benchmark validation remain active work. No Yale B accuracy
-or robustness claim should be considered final until that end-to-end path has
-been validated on the target execution environment.
+manifest generation are implemented, but real-data pseudo-3D preprocessing is
+currently blocked by a native MediaPipe runtime failure in the macOS execution
+environment. No Yale B pseudo-3D or comparative accuracy claim is reported.
+The current scope and decision are documented in
+`docs/EXECUTION_SPEC_AMENDMENT.md` and `docs/DECISIONS.md`.
 
 ## License and data
 

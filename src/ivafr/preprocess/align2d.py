@@ -72,9 +72,12 @@ def align_to_template(
         template = TEMPLATE_112 * (size / 112.0)
     tpl = np.asarray(template, dtype=np.float32)
     lms = np.asarray(landmarks, dtype=np.float32)
+    # ``similarity_transform`` maps source coordinates to output coordinates.
+    # OpenCV's default warpAffine convention internally applies the inverse
+    # mapping when sampling the source, so passing the inverse here would
+    # invert the transform twice and produce mostly empty/constant crops.
     M = similarity_transform(lms, tpl)
-    inv = cv2.invertAffineTransform(M)
-    out = cv2.warpAffine(img, inv, (size, size), flags=cv2.INTER_LINEAR)
+    out = cv2.warpAffine(img, M, (size, size), flags=cv2.INTER_LINEAR)
     return out
 
 

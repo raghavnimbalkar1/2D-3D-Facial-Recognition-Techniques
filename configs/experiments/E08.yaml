@@ -1,8 +1,14 @@
 id: E08
-name: synthetic_occlusion
-dataset: toy
+name: yale_occlusion
+dataset: yaleb
 protocols: [P2_disjoint]
 seeds: [0, 1, 2, 3, 4]
 arms:
   - {key: best-2D, feature: pca, matcher: nn_cosine}
-  - {key: best-3D, feature: depth_pca, matcher: nn_cosine}
+robustness:
+  type: occlusion
+  conditions:
+    - {name: sunglasses_20, kind: sunglasses, fraction: 0.20}
+    - {name: block_20, kind: block, fraction: 0.20}
+    - {name: block_30, kind: block, fraction: 0.30}
+    - {name: block_40, kind: block, fraction: 0.40}

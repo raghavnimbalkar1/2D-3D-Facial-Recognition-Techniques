@@ -1,6 +1,6 @@
 id: E01
-name: 2d_baselines
-dataset: toy
+name: 2d_baselines_yaleb
+dataset: yaleb
 protocols: [P1_closed, P2_disjoint]
 seeds: [0, 1, 2, 3, 4]
 arms:

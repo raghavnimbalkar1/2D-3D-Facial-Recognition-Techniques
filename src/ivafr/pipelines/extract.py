@@ -60,6 +60,7 @@ def extract_features(
     interim: Path,
     modality: str,
     seed: int = 0,
+    probe_augmentation: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str], list[str], list[str]]:
     """Extract features for a split; returns (X_train, X_gallery, X_probe, ...).
 
@@ -77,7 +78,20 @@ def extract_features(
     y_train = np.asarray([subj_of[i] for i in train_ids])
     X_train = extractor.fit([arrays[i] for i in train_ids], y_train).transform([arrays[i] for i in train_ids])
     X_gallery = extractor.transform([arrays[i] for i in gallery_ids])
-    X_probe = extractor.transform([arrays[i] for i in probe_ids])
+    probe_arrays = [arrays[i] for i in probe_ids]
+    if probe_augmentation:
+        from ivafr.preprocess.degrade2d import occlude
+
+        probe_arrays = [
+            occlude(
+                x,
+                kind=str(probe_augmentation.get("kind", "block")),
+                fraction=float(probe_augmentation.get("fraction", 0.3)),
+                seed=seed + j,
+            )
+            for j, x in enumerate(probe_arrays)
+        ]
+    X_probe = extractor.transform(probe_arrays)
     log.info(
         "%s: fit on %d train, dim=%s, gallery=%d probe=%d",
         feature_name,

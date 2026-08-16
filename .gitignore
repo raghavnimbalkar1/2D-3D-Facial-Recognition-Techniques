@@ -3,6 +3,9 @@ data/
 results/runs/
 results/figures/
 results/tables/
+models/
+*.caffemodel
+*.task
 .env
 
 # python

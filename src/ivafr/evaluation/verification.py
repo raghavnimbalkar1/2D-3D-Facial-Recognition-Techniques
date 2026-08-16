@@ -79,15 +79,30 @@ def dprime(genuine: np.ndarray, impostor: np.ndarray) -> float:
     return float(abs(g.mean() - i.mean()) / np.sqrt(max(var, 1e-12)))
 
 
-def bootstrap_ci(genuine: np.ndarray, impostor: np.ndarray, metric: str = "eer", n=1000, seed: int = 0) -> list[float]:
-    """Bootstrap 95% CI for ``eer`` or ``auc`` (percentile method)."""
+def bootstrap_ci(
+    genuine: np.ndarray,
+    impostor: np.ndarray,
+    metric: str = "eer",
+    n: int = 1000,
+    seed: int = 0,
+    max_pairs: int = 10000,
+) -> list[float]:
+    """Bootstrap 95% CI using 1,000 resamples.
+
+    Point estimates still use every verification pair. For large Yale B
+    impostor pools, each bootstrap replicate samples at most ``max_pairs``
+    genuine and impostor scores, keeping the required resample count
+    computationally bounded and deterministic.
+    """
     g = np.asarray(genuine, dtype=np.float64)
     i = np.asarray(impostor, dtype=np.float64)
     rng = np.random.default_rng(seed)
+    g_size = min(len(g), int(max_pairs))
+    i_size = min(len(i), int(max_pairs))
     vals = np.empty(n)
     for k in range(n):
-        gs = rng.choice(g, size=len(g), replace=True)
-        is_ = rng.choice(i, size=len(i), replace=True)
+        gs = rng.choice(g, size=g_size, replace=True)
+        is_ = rng.choice(i, size=i_size, replace=True)
         if metric == "eer":
             vals[k] = eer(gs, is_)[0]
         elif metric == "auc":

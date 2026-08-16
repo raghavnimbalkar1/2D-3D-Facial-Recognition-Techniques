@@ -65,10 +65,18 @@ def _perfect_rank_matrix():
     # 3 probes, 5 gallery: probe i matches gallery column i.
     rng = np.random.default_rng(0)
     S = rng.uniform(0.2, 0.8, (3, 5))
-    S[0, 1] = 0.95
-    S[1, 3] = 0.9
-    S[2, 0] = 0.85
+    S[0, 0] = 0.95
+    S[1, 1] = 0.9
+    S[2, 2] = 0.85
     return S
+
+
+def test_eer_uses_interpolation_between_roc_points():
+    genuine = np.asarray([0.863, 0.541, 0.300, 0.423])
+    impostor = np.asarray([0.028, 0.124, 0.671, 0.647])
+    value, threshold = eer(genuine, impostor)
+    assert value == pytest_approx(0.5)
+    assert threshold == pytest_approx(0.5313333333)
 
 
 def test_cmc_monotone_and_ends_at_one():
@@ -87,7 +95,10 @@ def test_rank1_accuracy_closed_set():
     assert res.rank1 == 1.0
     assert res.accuracy == 1.0
     assert res.mrr == 1.0
-    assert res.f1_macro == pytest_approx(1.0)
+    # Only S1--S3 occur in the probe set; S4/S5 have zero support in this
+    # deliberately partial closed-set fixture, so macro F1 over the gallery
+    # label universe is 3/5.
+    assert res.f1_macro == pytest_approx(0.6)
 
 
 def pytest_approx(v):
@@ -100,6 +111,8 @@ def test_identification_breaks():
     S = _perfect_rank_matrix()
     S2 = S.copy()
     S2[0, 0] = 0.1  # probe 0 now fails
+    S2[0, 1] = 0.8
+    S2[0, 2:] = 0.05  # make the failed probe rank exactly second
     probe_labels = np.asarray(["S1", "S2", "S3"])
     gallery_labels = np.asarray(["S1", "S2", "S3", "S4", "S5"])
     res = evaluate_identification(S2, probe_labels, gallery_labels)

@@ -72,6 +72,7 @@ class ExperimentConfig:
     evaluate_identification: bool = True
     evaluate_verification: bool = True
     evaluate_timing: bool = False
+    robustness: dict[str, Any] = field(default_factory=dict)
     tables: list[str] = field(default_factory=list)
     figures: list[str] = field(default_factory=list)
 
@@ -135,6 +136,7 @@ class ConfigResolver:
             evaluate_identification=raw.get("evaluate", {}).get("identification", True),
             evaluate_verification=raw.get("evaluate", {}).get("verification", True),
             evaluate_timing=raw.get("evaluate", {}).get("timing", False),
+            robustness=raw.get("robustness", {}),
             tables=raw.get("report", {}).get("tables", []),
             figures=raw.get("report", {}).get("figures", []),
         )

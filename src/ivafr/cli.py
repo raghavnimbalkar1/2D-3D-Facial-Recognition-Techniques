@@ -15,7 +15,6 @@ Reproduction path (matches the plan's CLI):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -68,18 +67,19 @@ def preprocess(
     modality: str = typer.Option("both", help="2d | 3d | both"),
     data_root: str = typer.Option(DEFAULT_DATA, "--data-root"),
     configs_root: str = typer.Option(DEFAULT_CONFIGS, "--configs"),
-    cfg2d: str = typer.Option("p2d_default"),
-    cfg3d: str = typer.Option("p3d_default"),
+    cfg2d: str | None = typer.Option(None, help="Override the dataset's 2D config"),
+    cfg3d: str | None = typer.Option(None, help="Override the dataset's 3D config"),
 ) -> None:
     """Stage 1/2: 2D + 3D preprocessing chains (content-hash cached)."""
     from ivafr.pipelines.preprocess_run import preprocess_dataset
 
     resolver = _resolver(configs_root)
+    dataset_cfg = resolver.dataset_config(dataset)
     preprocess_dataset(
         dataset,
         data_root,
-        resolver.preprocess_config(cfg2d),
-        resolver.preprocess_config(cfg3d),
+        resolver.preprocess_config(cfg2d or dataset_cfg.get("preprocess_2d", "p2d_default")),
+        resolver.preprocess_config(cfg3d or dataset_cfg.get("preprocess_3d", "p3d_default")),
         modality=modality,
     )
 
@@ -111,8 +111,8 @@ def run(
     results_root: str = typer.Option(DEFAULT_RESULTS, "--results-root"),
     configs_root: str = typer.Option(DEFAULT_CONFIGS, "--configs"),
     force: bool = typer.Option(False, "--force", help="Re-run existing run dirs"),
-    seed: Optional[list[int]] = typer.Option(None, "--seed"),
-    protocol: Optional[list[str]] = typer.Option(None, "--protocol"),
+    seed: list[int] | None = typer.Option(None, "--seed"),
+    protocol: list[str] | None = typer.Option(None, "--protocol"),
 ) -> None:
     """Run experiments: extract + match + evaluate for each configured arm."""
     from ivafr.pipelines.run_experiment import run_experiment
@@ -166,21 +166,33 @@ def robustness(
 @app.command()
 def timing(
     exp: list[str] = typer.Option(..., "--exp"),
+    data_root: str = typer.Option(DEFAULT_DATA, "--data-root"),
     configs_root: str = typer.Option(DEFAULT_CONFIGS, "--configs"),
     results_root: str = typer.Option(DEFAULT_RESULTS, "--results-root"),
 ) -> None:
-    """Write a reproducible single-pass timing table for configured experiments."""
+    """Run configured timing experiments and write a timing table."""
     import json
-    import platform
-    import time
     import pandas as pd
 
+    resolver = _resolver(configs_root)
     rows = []
     for exp_id in exp:
-        start = time.perf_counter()
-        n = len(list(Path(results_root).glob("runs/*/metrics.json")))
-        elapsed = (time.perf_counter() - start) * 1000.0
-        rows.append({"experiment": exp_id, "operation": "metrics_scan", "median_ms": elapsed, "runs_seen": n, "python": platform.python_version()})
+        exp_cfg = resolver.experiment(exp_id)
+        from ivafr.pipelines.run_experiment import run_experiment
+
+        run_experiment(exp_cfg, data_root=data_root, results_root=results_root)
+        for metrics_file in sorted(Path(results_root).glob(f"runs/*_{exp_id}_*/metrics.json")):
+            metrics = json.loads(metrics_file.read_text(encoding="utf-8"))
+            if "timing" in metrics:
+                rows.append({
+                    "experiment": exp_id,
+                    "dataset": metrics.get("dataset", {}).get("name"),
+                    "data_modality": metrics.get("data_modality"),
+                    "arm": metrics.get("arm"),
+                    "protocol": metrics.get("protocol"),
+                    "seed": metrics.get("seed"),
+                    **metrics["timing"],
+                })
     out = Path(results_root) / "tables"
     out.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out / "T5_timing.csv", index=False)

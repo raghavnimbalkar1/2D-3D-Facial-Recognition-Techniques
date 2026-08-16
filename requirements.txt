@@ -15,5 +15,5 @@ pytest
 pytest-cov
 ruff
 black
-# Optional: mediapipe (Yale B pseudo-3D FaceMesh path)
+mediapipe>=0.10.9  # Toy pseudo-3D path; real Yale B runtime is blocked here
 # Optional: insightface onnxruntime (ArcFace; frozen, research-use license)

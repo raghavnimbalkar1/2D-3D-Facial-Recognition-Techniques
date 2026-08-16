@@ -7,7 +7,6 @@ Raw faces are never copied into the repository or redistributed by ivafr.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -16,6 +15,7 @@ from ivafr.datasets.base import Cloud3D, DatasetAdapter, Sample
 from ivafr.registry import register_dataset
 
 _SUBJECT = re.compile(r"(?:yaleB|subject)(\d+)", re.IGNORECASE)
+_LIGHT = re.compile(r"_P(?P<pose>\d{2})A(?P<az>[+-]\d{3})E(?P<el>[+-]\d{2})", re.IGNORECASE)
 
 
 @register_dataset("yaleb")
@@ -39,11 +39,32 @@ class YaleBAdapter(DatasetAdapter):
         )
         samples: list[Sample] = []
         for path in paths:
+            if "ambient" in path.stem.lower():
+                # The v2 benchmark uses the 64 single-light frontal captures;
+                # the cropped archive also contains one extra ambient image.
+                continue
             match = _SUBJECT.search(path.name) or _SUBJECT.search(path.parent.name)
             if not match:
                 continue
             subject = f"S{int(match.group(1)):03d}"
             token = path.stem.split("_", 1)[-1]
+            light = _LIGHT.search(path.stem)
+            if light:
+                pose = int(light.group("pose"))
+                azimuth = int(light.group("az"))
+                elevation = int(light.group("el"))
+                illumination = (
+                    "normal"
+                    if azimuth == 0 and elevation == 0
+                    else f"yale:A{azimuth:+04d}E{elevation:+03d}"
+                )
+                notes = f"native_light={token};azimuth={azimuth};elevation={elevation}"
+            else:
+                pose = 0
+                azimuth = 0
+                elevation = 0
+                illumination = f"yale:{token}"
+                notes = "native_light=" + token
             sid = f"{subject}_{path.stem}"
             img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
             if img is None:
@@ -57,13 +78,14 @@ class YaleBAdapter(DatasetAdapter):
                     meta={
                         "session": "s1",
                         "expression": "neutral",
-                        "pose_yaw": 0.0,
+                        "pose_yaw": 0.0 if pose == 0 else float(pose),
                         "pose_pitch": 0.0,
-                        "illumination": f"yale:{token}",
+                        "illumination": illumination,
                         "occlusion": "none",
                         "orig_w": int(img.shape[1]),
                         "orig_h": int(img.shape[0]),
                         "n_points": 468,
+                        "notes": notes,
                     },
                 )
             )
@@ -74,7 +96,7 @@ class YaleBAdapter(DatasetAdapter):
     def load_2d(self, s: Sample) -> np.ndarray:
         img = cv2.imread(str(s.path_2d), cv2.IMREAD_COLOR)
         if img is None:
-            raise IOError(f"Cannot read image {s.path_2d}")
+            raise OSError(f"Cannot read image {s.path_2d}")
         return img
 
     def load_3d(self, s: Sample) -> Cloud3D:

@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from ivafr.logging_utils import get_logger
 from ivafr.evaluation.metrics import mean_std
+from ivafr.logging_utils import get_logger
 
 log = get_logger("pipelines.aggregate")
 
@@ -34,6 +34,8 @@ def collect_metrics(results_root: str | Path) -> pd.DataFrame:
                 "arm": m["arm"],
                 "protocol": m["protocol"],
                 "seed": m["seed"],
+                "dataset": m.get("dataset", {}).get("name", "unknown"),
+                "data_modality": m.get("data_modality", m.get("dataset", {}).get("data_modality", "unknown")),
                 "rank1": ident.get("rank1", float("nan")),
                 "rank5": ident.get("rank5", float("nan")),
                 "accuracy": ident.get("accuracy", float("nan")),
@@ -53,7 +55,7 @@ def collect_metrics(results_root: str | Path) -> pd.DataFrame:
 
 def summarized(df: pd.DataFrame) -> pd.DataFrame:
     """Mean +- std over seeds, per (exp_id, arm, protocol)."""
-    group = ["exp_id", "arm", "protocol"]
+    group = ["dataset", "data_modality", "exp_id", "arm", "protocol"]
     out = df.groupby(group, dropna=False)[
         ["rank1", "rank5", "accuracy", "precision_macro", "recall_macro", "f1_macro", "mrr", "eer", "auc"]
     ].agg(["mean", "std"])
@@ -67,7 +69,8 @@ def render_t1(df: pd.DataFrame) -> pd.DataFrame:
     Processing Time is placeholder "NA" until E10 lands.
     """
     rows = []
-    for (exp_id, arm, protocol), g in df.groupby(["exp_id", "arm", "protocol"]):
+    eval_df = df.loc[df["rank1"].notna()]
+    for (dataset, data_modality, exp_id, arm, protocol), g in eval_df.groupby(["dataset", "data_modality", "exp_id", "arm", "protocol"]):
         m, s = mean_std(g["rank1"].tolist()), mean_std(g["precision_macro"].tolist())
         r, f = mean_std(g["recall_macro"].tolist()), mean_std(g["f1_macro"].tolist())
         rows.append(
@@ -79,16 +82,22 @@ def render_t1(df: pd.DataFrame) -> pd.DataFrame:
                 "F1-Score": f"{f[0]:.4f}±{f[1]:.4f}",
                 "Processing Time": "NA",
                 "protocol": protocol,
+                "dataset": dataset,
+                "data_modality": data_modality,
             }
         )
-    return pd.DataFrame(rows, columns=[*T1_COLUMNS, "protocol"])
+    return pd.DataFrame(
+        rows,
+        columns=["dataset", "data_modality", *T1_COLUMNS, "protocol"],
+    )
 
 
 def render_extended(df: pd.DataFrame) -> pd.DataFrame:
     """Extended table with Rank-5, EER, AUC, MRR."""
     rows = []
-    for (exp_id, arm, protocol), g in df.groupby(["exp_id", "arm", "protocol"]):
-        row = {"exp": exp_id, "arm": arm, "protocol": protocol}
+    eval_df = df.loc[df["rank1"].notna()]
+    for (dataset, data_modality, exp_id, arm, protocol), g in eval_df.groupby(["dataset", "data_modality", "exp_id", "arm", "protocol"]):
+        row = {"dataset": dataset, "data_modality": data_modality, "exp": exp_id, "arm": arm, "protocol": protocol}
         for col in ("rank1", "rank5", "mrr", "eer", "auc"):
             m, s = mean_std(g[col].tolist())
             row[col] = f"{m:.4f}±{s:.4f}"
@@ -104,9 +113,9 @@ def write_tables(df: pd.DataFrame, out_root: str | Path) -> None:
     t1.to_csv(out / "T1_main_comparison.csv", index=False)
     ext = render_extended(df)
     ext.to_csv(out / "T1_extended.csv", index=False)
-    md = "| " + " | ".join(T1_COLUMNS) + " |\n|" + "---|" * len(T1_COLUMNS) + "\n"
+    md = "| dataset | data_modality | " + " | ".join(T1_COLUMNS) + " |\n|---|---|" + "---|" * len(T1_COLUMNS) + "\n"
     for _, r in t1.iterrows():
-        md += "| " + " | ".join(str(r[c]) for c in T1_COLUMNS) + " |\n"
+        md += "| " + " | ".join(str(r[c]) for c in ["dataset", "data_modality", *T1_COLUMNS]) + " |\n"
     (out / "T1_main_comparison.md").write_text(md, encoding="utf-8")
     log.info("Tables written to %s", out)
 
@@ -114,11 +123,16 @@ def write_tables(df: pd.DataFrame, out_root: str | Path) -> None:
 def write_results_md(df: pd.DataFrame, out_root: str | Path) -> None:
     """Auto-generate RESULTS.md from collected metrics."""
     out = Path(out_root)
-    s = summarized(df)
     lines = [
         "# RESULTS",
         "",
         f"Generated from {len(df)} run directories on `{df['protocol'].nunique() if len(df) else 0}` protocols.",
+        "",
+        "## Data separation and limitations",
+        "",
+        "Real Yale B rows and synthetic toy rows are kept separate by the `data_modality` field.",
+        "The toy pseudo-3D and fusion results are synthetic methodology validation only.",
+        "Real-data pseudo-3D is environment-blocked by the documented MediaPipe native runtime failure; no real 2D-versus-3D claim is made.",
         "",
         "## T1 — Main comparison (mean ± std over seeds)",
         "",
@@ -127,9 +141,9 @@ def write_results_md(df: pd.DataFrame, out_root: str | Path) -> None:
         "",
     ]
     ext = render_extended(df)
-    md = "| exp | arm | protocol | rank1 | rank5 | mrr | eer | auc |\n|---|---|---|---|---|---|---|---|\n"
+    md = "| dataset | data_modality | exp | arm | protocol | rank1 | rank5 | mrr | eer | auc |\n|---|---|---|---|---|---|---|---|---|---|\n"
     for _, r in ext.iterrows():
-        md += "| " + " | ".join(str(r[c]) for c in ("exp", "arm", "protocol", "rank1", "rank5", "mrr", "eer", "auc")) + " |\n"
+        md += "| " + " | ".join(str(r[c]) for c in ("dataset", "data_modality", "exp", "arm", "protocol", "rank1", "rank5", "mrr", "eer", "auc")) + " |\n"
     lines.append(md)
     (out / "RESULTS.md").write_text("\n".join(lines), encoding="utf-8")
     log.info("RESULTS.md -> %s", out / "RESULTS.md")

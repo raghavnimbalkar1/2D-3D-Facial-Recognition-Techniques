@@ -9,7 +9,7 @@ Schema (one row = one capture)::
     path_2d, path_3d, path_landmarks,
     expression, pose_yaw, pose_pitch, illumination, occlusion,
     orig_w, orig_h, n_points, has_2d, has_3d,
-    detect_ok, align_ok, nosetip_ok, quality_flag, notes
+    detect_ok, align_ok, nosetip_ok, quality_flag, notes, data_modality
 
 Rules: ``subject_id`` is a zero-padded canonical string (``S001``);
 ``pose_yaw/pose_pitch`` in degrees (0 = frontal); ``illumination`` in
@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from ivafr.datasets.base import Sample
@@ -51,6 +52,7 @@ MANIFEST_COLUMNS = [
     "nosetip_ok",
     "quality_flag",
     "notes",
+    "data_modality",
 ]
 
 ILLUM_VALUES = {"normal", "strong", "dark", "side"}
@@ -103,12 +105,13 @@ def samples_to_manifest(samples: list[Sample]) -> pd.DataFrame:
                 "orig_h": _int_na(meta.get("orig_h")),
                 "n_points": _int_na(meta.get("n_points")),
                 "has_2d": bool(s.path_2d is not None),
-                "has_3d": bool(s.path_3d is not None or s.dataset == "yaleb"),
+                "has_3d": bool(s.path_3d is not None),
                 "detect_ok": False,
                 "align_ok": False,
                 "nosetip_ok": False,
                 "quality_flag": "",
                 "notes": str(_na(meta.get("notes"))),
+                "data_modality": "synthetic_toy" if s.dataset == "toy" else "real",
             }
         )
     df = pd.DataFrame(rows, columns=MANIFEST_COLUMNS)
@@ -133,6 +136,9 @@ def validate_manifest(df: pd.DataFrame) -> None:
     }
     if unknown_illum:
         raise ValueError(f"Unknown illumination values: {unknown_illum}")
+    modalities = set(df["data_modality"].astype(str))
+    if not modalities <= {"real", "synthetic_toy"}:
+        raise ValueError(f"Unknown data_modality values: {modalities - {'real', 'synthetic_toy'}}")
     for col in ("pose_yaw", "pose_pitch", "orig_w", "orig_h", "n_points"):
         nonnum = pd.to_numeric(df[col], errors="coerce")
         if nonnum.isna().any() and (df[col] != "NA").any():
@@ -150,6 +156,10 @@ def write_manifest(df: pd.DataFrame, path: str | Path) -> None:
 def read_manifest(path: str | Path) -> pd.DataFrame:
     """Load and validate a manifest CSV."""
     df = pd.read_csv(path, dtype={"subject_id": str, "sample_id": str})
+    # Upgrade manifests written before v2 without changing their row data.
+    if "data_modality" not in df.columns:
+        df["data_modality"] = np.where(df["dataset"].eq("toy"), "synthetic_toy", "real")
+        df = df[[*MANIFEST_COLUMNS]]
     validate_manifest(df)
     return df
 

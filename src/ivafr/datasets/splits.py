@@ -37,6 +37,16 @@ def _frontal_neutral(df: pd.DataFrame, strict: dict[str, Any]) -> pd.Series:
     mask = (yaw == 0.0) & (pitch == 0.0)
     if strict.get("illumination") is not None:
         mask &= illum.isin(strict["illumination"])
+    # The cropped Yale B distribution has no semantic ``normal`` label; its
+    # native lighting identifiers are yale:<index>. Use one deterministic
+    # canonical capture per subject for P1 instead of silently producing an
+    # empty gallery. The illumination index is retained in the manifest and
+    # reported in the split metadata.
+    if not mask.any() and df["dataset"].eq("yaleb").all():
+        order = pd.to_numeric(illum.astype(str).str.extract(r"yale:(\d+)")[0], errors="coerce")
+        mask = pd.Series(False, index=df.index)
+        for _, group in df.assign(_illum_order=order).sort_values("_illum_order").groupby("subject_id"):
+            mask.loc[group.index[0]] = True
     return mask
 
 
@@ -103,6 +113,7 @@ def make_split(
         "eval_subjects": [],
         "gallery_ids": [],
         "probe_ids": [],
+        "gallery_selection": "normal_frontal" if protocol == "P1_closed" else "normal_frontal_eval_subjects",
     }
 
     if protocol == "P1_closed":

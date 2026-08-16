@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import numpy as np
 
-from ivafr.datasets.toy import ToyAdapter, generate_toy, _render_face, _FaceParams
+from ivafr.datasets.toy import ToyAdapter, _FaceParams, _render_face, generate_toy
 
 
 def _params() -> _FaceParams:
-    return _FaceParams(head_w=46, head_h=52, nose_scale=11, nose_len=0.7, brow_scale=2.5, cheek_scale=1.2, albedo=0.7)
+    return _FaceParams(
+        head_w=46,
+        head_h=52,
+        nose_scale=11,
+        nose_len=0.7,
+        brow_scale=2.5,
+        cheek_scale=1.2,
+        albedo=0.7,
+    )
 
 
 def test_generator_deterministic(tmp_path):
-    import hashlib
     import cv2
 
     a = tmp_path / "a"
@@ -21,7 +28,7 @@ def test_generator_deterministic(tmp_path):
     generate_toy(b, n_subjects=2, n_samples=3, size=96, seed=5)
     for pa in sorted((a / "toy").rglob("*.png")):
         rel = pa.relative_to(a)
-        img_b = cv2.imread(str(b / "toy" / rel))
+        img_b = cv2.imread(str(b / rel))
         img_a = cv2.imread(str(pa))
         assert img_a is not None and img_b is not None
         assert np.array_equal(img_a, img_b), f"render differs: {rel}"

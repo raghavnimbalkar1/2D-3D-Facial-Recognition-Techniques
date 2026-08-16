@@ -51,7 +51,7 @@ def preprocess_2d_sample(
     Returns:
         (img112 uint8 3ch, gray64 float32, detect_ok, detection source).
     """
-    det = detect_face(img, gt_landmarks)
+    det = detect_face(img, gt_landmarks, cfg2d.get("detector", {}))
     if not det.ok:
         return np.zeros((112, 112, 3), np.uint8), np.zeros((64, 64), np.float32), False, "none"
     alg = cfg2d.get("align", {})
@@ -115,13 +115,14 @@ def preprocess_dataset(
     manifest = read_manifest(manifest_path)
     adapter_cls = get_dataset(dataset)
     adapter = adapter_cls(raw_root=data_root / "raw")
+    samples_by_id = {s.sample_id: s for s in adapter.discover()}
     interim = data_root / "interim" / dataset
     interim.mkdir(parents=True, exist_ok=True)
 
     rows = manifest if limit is None else manifest.head(limit)
     for i, row in rows.iterrows():
         subject, sample_id = str(row["subject_id"]), str(row["sample_id"])
-        sample = next((s for s in adapter.discover() if s.sample_id == sample_id), None)
+        sample = samples_by_id.get(sample_id)
         if sample is None:
             log.error("Sample %s missing from adapter output", sample_id)
             continue
