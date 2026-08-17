@@ -95,6 +95,7 @@ def test_rank1_accuracy_closed_set():
     assert res.rank1 == 1.0
     assert res.accuracy == 1.0
     assert res.mrr == 1.0
+    assert res.as_dict()["n_gallery"] == 5
     # Only S1--S3 occur in the probe set; S4/S5 have zero support in this
     # deliberately partial closed-set fixture, so macro F1 over the gallery
     # label universe is 3/5.

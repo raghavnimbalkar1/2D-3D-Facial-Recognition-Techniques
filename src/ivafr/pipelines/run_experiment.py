@@ -106,12 +106,13 @@ def run_experiment(
             for arm in exp.arms:
                 if arms and arm.key not in arms:
                     continue
-                run_dir = _new_run_dir(results_root, exp.id, protocol, seed, arm.key)
-                metrics_path = run_dir / "metrics.json"
-                if metrics_path.is_file() and not force:
+                run_dir = _existing_run_dir(results_root, exp.id, protocol, seed, arm.key)
+                if run_dir is not None and not force:
                     log.info("Skipping existing %s", run_dir)
                     run_dirs.append(run_dir)
                     continue
+                run_dir = _new_run_dir(results_root, exp.id, protocol, seed, arm.key)
+                metrics_path = run_dir / "metrics.json"
                 robustness_conditions = (
                     exp.robustness.get("conditions", []) if exp.robustness else []
                 )
@@ -276,6 +277,26 @@ def _artifacts_verification(run_dir: Path, arm_key: str, ver, g_scores, i_scores
     viz_plots.plot_det({arm_key: (ver.det_far, ver.det_frr)})
     viz_plots.plot_far_frr({arm_key: (ver.far_frr_thr, ver.far_frr[0], ver.far_frr[1])})
     viz_plots.plot_score_hists({arm_key: (g_scores, i_scores)})
+
+
+def _existing_run_dir(
+    results_root: Path, exp_id: str, protocol: str, seed: int, arm: str
+) -> Path | None:
+    """Most recent completed run dir for (exp, protocol, seed, arm), or None.
+
+    Run dir names embed a UTC timestamp, so a naive ``is_file`` check on a
+    freshly generated name can never hit. Scan the runs tree instead, so
+    re-runs are idempotent: an existing ``metrics.json`` means skip.
+    """
+    best: Path | None = None
+    best_ts = ""
+    for d in (results_root / "runs").glob(f"*_{exp_id}_{protocol}_s{seed}_{arm}"):
+        if not (d / "metrics.json").is_file():
+            continue
+        ts = d.name.split("_", 1)[0]
+        if best is None or ts > best_ts:
+            best, best_ts = d, ts
+    return best
 
 
 def _new_run_dir(results_root: Path, exp_id: str, protocol: str, seed: int, arm: str) -> Path:

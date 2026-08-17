@@ -60,6 +60,7 @@ class IdentificationResult:
             "f1_weighted": self.f1_weighted,
             "accuracy": self.accuracy,
             "n_probe": len(self.truth),
+            "n_gallery": len(self.labels),
             "per_class": self.per_class,
             "per_condition": self.per_condition,
         }

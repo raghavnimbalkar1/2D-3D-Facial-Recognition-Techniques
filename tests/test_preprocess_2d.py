@@ -56,6 +56,15 @@ def test_illum_methods_output_range():
         assert np.isfinite(out).all()
 
 
+def test_illumination_preserves_pixel_spread():
+    """Contrast methods must not collapse a non-constant crop to black."""
+    a = _render_face(160, _params(), 0.0, 0.0, (0.0, 25.0, 1.0), seed=1)[0][..., 0] / 255.0
+    for method in ("histeq", "clahe"):
+        out = normalize_illum(a, method)
+        assert float(out.std()) > 0.05
+        assert float(out.max() - out.min()) > 0.25
+
+
 def test_cache_mark_and_hit(tmp_path):
     from ivafr.preprocess import cache
 

@@ -204,11 +204,12 @@ def timing(
 def aggregate(
     results_root: str = typer.Option(DEFAULT_RESULTS, "--results-root"),
     out_root: str = typer.Option("results", "--out"),
+    preamble: str = typer.Option("docs/RESULTS_PREAMBLE.md", "--preamble"),
 ) -> None:
     """Glob metrics.json -> tables/*.csv|md + RESULTS.md."""
     from ivafr.pipelines.aggregate import aggregate as run_aggregate
 
-    run_aggregate(results_root, out_root)
+    run_aggregate(results_root, out_root, preamble=preamble)
 
 
 @app.command()

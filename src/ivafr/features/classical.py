@@ -9,6 +9,7 @@ from skimage.feature import hog as sk_hog
 from skimage.feature import local_binary_pattern
 from skimage.filters import gabor
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.decomposition import PCA
 
 from ivafr.features.base import FeatureExtractor
 from ivafr.registry import register_feature
@@ -147,22 +148,68 @@ class NormalHOGFeature(HOGFeature):
 
 
 @register_feature("gabor")
-class GaborFeature(_FixedFeature):
-    """Multi-scale, multi-orientation Gabor response summaries."""
+class GaborFeature(FeatureExtractor):
+    """Spatial Gabor maps downsampled and projected with train-only PCA."""
 
     name = "gabor"
     modality = "2d"
+    requires_fit = True
 
-    def transform_one(self, x: np.ndarray) -> np.ndarray:
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
+        super().__init__(params)
+        self.pca: PCA | None = None
+        self._raw_dim: int | None = None
+        self._dim: int | None = None
+
+    def _raw_transform_one(self, x: np.ndarray) -> np.ndarray:
         a = _gray(x)
-        scales = self.params.get("frequencies", (0.1, 0.2, 0.3, 0.4, 0.5))
+        frequencies = self.params.get("frequencies", (0.1, 0.2, 0.3, 0.4, 0.5))
         orientations = int(self.params.get("orientations", 8))
+        factor = int(self.params.get("downsample_factor", 4))
+        if factor < 1:
+            raise ValueError("gabor downsample_factor must be positive")
+        h, w = a.shape
         out = []
-        for freq in scales:
+        for freq in frequencies:
             for theta in np.linspace(0, np.pi, orientations, endpoint=False):
                 real, imag = gabor(a, frequency=float(freq), theta=float(theta))
-                out.append(float(np.hypot(real, imag).mean()))
-        return np.asarray(out, dtype=np.float32)
+                magnitude = np.hypot(real, imag)
+                h_crop = (h // factor) * factor
+                w_crop = (w // factor) * factor
+                small = magnitude[:h_crop, :w_crop].reshape(
+                    h_crop // factor,
+                    factor,
+                    w_crop // factor,
+                    factor,
+                ).mean(axis=(1, 3))
+                out.append(small.reshape(-1))
+        return np.concatenate(out).astype(np.float32)
+
+    def fit(self, X: list[np.ndarray], y: np.ndarray | None = None) -> "GaborFeature":
+        raw = np.stack([self._raw_transform_one(x) for x in X]).astype(np.float32)
+        max_components = int(self.params.get("pca_components", 200))
+        n_components = min(max_components, raw.shape[0], raw.shape[1])
+        if n_components < 1:
+            raise ValueError("Gabor PCA requires at least one component")
+        self.pca = PCA(n_components=n_components, random_state=0, svd_solver="full")
+        self.pca.fit(raw)
+        self._raw_dim = int(raw.shape[1])
+        self._dim = n_components
+        self._fit = True
+        return self
+
+    def transform_one(self, x: np.ndarray) -> np.ndarray:
+        if self.pca is None:
+            raise RuntimeError("fit() before transform_one()")
+        return self.pca.transform(self._raw_transform_one(x).reshape(1, -1))[0].astype(np.float32)
+
+    def feature_dim(self) -> int | None:
+        return self._dim
+
+    @property
+    def raw_feature_dim(self) -> int | None:
+        """Dimension before train-only PCA, exposed for validation and reports."""
+        return self._raw_dim
 
 
 @register_feature("curv_hist")

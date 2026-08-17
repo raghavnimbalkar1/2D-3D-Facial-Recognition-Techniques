@@ -80,3 +80,19 @@ def test_save_load_roundtrip(tmp_path):
 def test_unknown_feature_raises():
     with pytest.raises(KeyError):
         get_feature("not_a_feature")
+
+
+def test_gabor_preserves_spatial_variation_before_pca():
+    cls = get_feature("gabor")
+    feat = cls({"frequencies": [0.1, 0.2], "orientations": 2, "downsample_factor": 4, "pca_components": 8})
+    a = np.zeros((64, 64), dtype=np.float32)
+    a[16:48, 24:40] = 1.0
+    b = np.zeros((64, 64), dtype=np.float32)
+    b[24:40, 16:48] = 1.0
+    raw_a = feat._raw_transform_one(a)
+    raw_b = feat._raw_transform_one(b)
+    assert raw_a.shape == (2 * 2 * 16 * 16,)
+    assert not np.allclose(raw_a, raw_b)
+    feat.fit([a, b, np.flipud(a), np.fliplr(b)])
+    assert feat.raw_feature_dim == 1024
+    assert feat.feature_dim() == 4

@@ -2,3 +2,5 @@ feature: gabor
 params:
   frequencies: [0.1, 0.2, 0.3, 0.4, 0.5]
   orientations: 8
+  downsample_factor: 4
+  pca_components: 200

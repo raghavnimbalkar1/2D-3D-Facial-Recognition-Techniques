@@ -37,20 +37,25 @@ def normalize_illum(
     if method == "none":
         return img
     if method == "histeq":
-        eq = cv2.equalizeHist(np.clip(img, 0, 1).astype(np.uint8) * 255)
+        eq = cv2.equalizeHist(_to_uint8(img))
         return eq.astype(np.float32) / 255.0
     if method == "clahe":
         clip = float(params.get("clip_limit", 2.0))
         grid = int(params.get("grid", 8))
         clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(grid, grid))
-        return clahe.apply(np.clip(img, 0, 1).astype(np.uint8) * 255).astype(np.float32) / 255.0
+        return clahe.apply(_to_uint8(img)).astype(np.float32) / 255.0
     if method == "tantriggs":
         # Equalise the low-frequency illumination component before the
         # Tan-Triggs contrast stage. This keeps the operator stable on the
         # small synthetic/low-dynamic-range faces used for CI.
-        eq = cv2.equalizeHist(np.clip(img, 0, 1).astype(np.uint8) * 255).astype(np.float32) / 255.0
+        eq = cv2.equalizeHist(_to_uint8(img)).astype(np.float32) / 255.0
         return (0.1 * _tantriggs(eq, **params)).astype(np.float32)
     raise ValueError(f"Unknown illumination method {method!r}")
+
+
+def _to_uint8(img: np.ndarray) -> np.ndarray:
+    """Convert normalized float pixels to uint8 without truncation bias."""
+    return np.round(np.clip(img, 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
 def _tantriggs(
