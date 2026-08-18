@@ -47,6 +47,21 @@ timing: aggregate
 
 all: aggregate robustness timing
 
+tufts-ingest: .venv/bin/python
+	$(IVAFR) ingest --dataset tufts3d --data-root data
+
+tufts-preprocess: tufts-ingest
+	$(IVAFR) preprocess --dataset tufts3d --data-root data --modality both
+
+tufts-splits: tufts-preprocess
+	$(IVAFR) splits --dataset tufts3d --data-root data --protocol P1_closed --protocol P2_disjoint --seeds 0 --seeds 1 --seeds 2 --seeds 3 --seeds 4
+
+tufts-run: tufts-splits
+	$(IVAFR) run --exp E11 --exp E12 --exp E13 --data-root data --results-root results
+
+tufts-all: tufts-run
+	$(IVAFR) aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
+
 test:
 	$(PYTEST)
 

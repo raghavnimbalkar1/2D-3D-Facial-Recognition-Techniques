@@ -1,9 +1,17 @@
 # Results
 
-## Current status
+## Current Status
 
-This repository does not yet contain a publishable real-data 2D-versus-3D
-comparison.
+The benchmark evaluates both 2D appearance features (PCA, LBP, HOG, Gabor) and
+3D facial geometry features (DepthPCA, DepthLBP, NormalHOG, CurvHist) on:
+
+1. **Synthetic validation path**: The procedural `toy` dataset (`make all`),
+   providing ground-truth 3D depth maps and landmarks.
+2. **Real 2D-vs-3D benchmark**: The Tufts Face Database (`tufts3d`), featuring
+   SfM-reconstructed 3D meshes (TD_3D) and expression/occlusion-varied 2D
+   photos (TD_RGB_E) across 112 participants.
+3. **2D illumination baseline**: Extended Yale Face Database B (`yaleb`),
+   providing extreme lighting angles across 38 subjects.
 
 The deterministic toy dataset is the current end-to-end validation path for
 the pipeline and pseudo-3D methodology. Toy outputs are generated locally by

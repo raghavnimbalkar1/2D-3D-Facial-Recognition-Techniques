@@ -141,7 +141,8 @@ def validate_manifest(df: pd.DataFrame) -> None:
         raise ValueError(f"Unknown data_modality values: {modalities - {'real', 'synthetic_toy'}}")
     for col in ("pose_yaw", "pose_pitch", "orig_w", "orig_h", "n_points"):
         nonnum = pd.to_numeric(df[col], errors="coerce")
-        if nonnum.isna().any() and (df[col] != "NA").any():
+        is_na = (df[col] == "NA") | df[col].isna() | (df[col].astype(str).str.strip() == "")
+        if (nonnum.isna() & ~is_na).any():
             raise ValueError(f"Column {col} contains non-numeric or blank values")
 
 
@@ -155,7 +156,7 @@ def write_manifest(df: pd.DataFrame, path: str | Path) -> None:
 
 def read_manifest(path: str | Path) -> pd.DataFrame:
     """Load and validate a manifest CSV."""
-    df = pd.read_csv(path, dtype={"subject_id": str, "sample_id": str})
+    df = pd.read_csv(path, dtype={"subject_id": str, "sample_id": str}, keep_default_na=False)
     # Upgrade manifests written before v2 without changing their row data.
     if "data_modality" not in df.columns:
         df["data_modality"] = np.where(df["dataset"].eq("toy"), "synthetic_toy", "real")

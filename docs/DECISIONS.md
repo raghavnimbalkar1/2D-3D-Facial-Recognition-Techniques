@@ -65,3 +65,14 @@ completed work. `_existing_run_dir` now globs the runs tree for the most
 recent completed (exp, protocol, seed, arm) dir and skips it. This caused
 duplicate run dirs for the runs re-executed before the fix; the dedupe pass
 keeps the newest directory per combination.
+
+## 2026-08-18 — Real 3D facial recognition pivot to Tufts Face Database
+
+Given the macOS MediaPipe environment block on monocular pseudo-3D for Yale B,
+the project integrated the Tufts Face Database (TD_3D + TD_RGB_E) to obtain
+genuine reconstructed 3D facial geometry alongside expression-varied 2D photos.
+Tufts TD_3D provides 112 participant PLY meshes reconstructed via SfM, and TD_RGB_E
+provides 5 expression captures (neutral, smile, eyes_closed, shocked, sunglasses).
+The 3D preprocessing chain projects meshes to standardized depth range images,
+surface normals, and curvature channels. This enables direct 2D appearance vs 3D
+geometry comparison on real data.

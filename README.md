@@ -73,6 +73,33 @@ ivafr ingest --dataset toy --data-root data
 ivafr preprocess --dataset toy --data-root data --modality both
 ```
 
+## Tufts Face Database setup
+
+Tufts Face Database provides 112 participant SfM-reconstructed 3D meshes (TD_3D)
+and 5-expression 2D photos (TD_RGB_E).
+
+Fetch and extract the dataset via:
+
+```bash
+bash scripts/fetch_tufts.sh data/raw
+```
+
+Then run the full pipeline:
+
+```bash
+make tufts-all
+```
+
+Or individual stages:
+
+```bash
+ivafr ingest --dataset tufts3d --data-root data
+ivafr preprocess --dataset tufts3d --data-root data --modality both
+ivafr splits --dataset tufts3d --data-root data --protocol P1_closed --protocol P2_disjoint --seeds 0 --seeds 1 --seeds 2 --seeds 3 --seeds 4
+ivafr run --exp E11 --exp E12 --exp E13 --data-root data --results-root results
+ivafr aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
+```
+
 ## Yale B setup
 
 Download Extended Yale Face Database B from its [official distribution](https://cvc.cs.yale.edu/cvc/projects/yalefacesB/yalefacesB.html), extract it under:
@@ -112,12 +139,10 @@ results/       Generated runs, figures, tables, and summaries
 
 ## Current status
 
-The toy pipeline is the reproducible development path. Yale B ingestion and
-manifest generation are implemented, but real-data pseudo-3D preprocessing is
-currently blocked by a native MediaPipe runtime failure in the macOS execution
-environment. No Yale B pseudo-3D or comparative accuracy claim is reported.
-The current scope and decision are documented in
-`docs/EXECUTION_SPEC_AMENDMENT.md` and `docs/DECISIONS.md`.
+The project supports procedural toy validation (`make all`) and real 2D vs 3D
+evaluation on the Tufts Face Database (`make tufts-all`). Reconstructed 3D PLY
+meshes are projected to range images, surface normals, and curvature maps,
+enabling comparison against 2D appearance features (PCA, LBP, HOG, Gabor).
 
 ## License and data
 

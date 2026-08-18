@@ -148,6 +148,12 @@ def preprocess_dataset(
             pseudo = sample.path_3d is None
             if pseudo:
                 depth, lmk3d = _pseudo_depth_from_facemesh(adapter.load_2d(sample), cfg3d)
+            elif sample.path_3d and str(sample.path_3d).lower().endswith(".ply"):
+                cloud = adapter.load_3d(sample)
+                from ivafr.preprocess.mesh_to_depth import mesh_to_depth_map
+
+                grid_sz = int(cfg3d.get("range", {}).get("size", 64))
+                depth = mesh_to_depth_map(cloud.points, size=grid_sz)
             else:
                 depth = np.load(sample.path_3d).astype(np.float32)
             cfg_key = {"3d": cfg3d}
@@ -185,7 +191,10 @@ def preprocess_dataset(
         manifest["quality_flag"] = np.where(manifest["nosetip_ok"], "", "rejected")
     else:
         manifest["quality_flag"] = np.where(
-            manifest["detect_ok"] & manifest["nosetip_ok"], "", "rejected"
+            (~manifest["has_2d"] | manifest["detect_ok"])
+            & (~manifest["has_3d"] | manifest["nosetip_ok"]),
+            "",
+            "rejected",
         )
     reject = int((manifest["quality_flag"] == "rejected").sum())
     write_manifest(manifest, manifest_path)

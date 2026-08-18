@@ -1,30 +1,31 @@
 #!/bin/bash
-# Fetch Tufts Face Database subsets (direct download, no form).
-# TD_3D  : SfM-reconstructed PLY meshes, one per participant (~574 MB total)
-# TD_RGB_E : 5-expression 2D photos per participant (~1.9 GB total)
-# Terms: non-commercial research only, no redistribution; cite the TPAMI paper.
 set -euo pipefail
 BASE=https://tdface.ece.tufts.edu/downloads
 OUT=${1:-data/raw}
 mkdir -p "$OUT"/TD_3D "$OUT"/TD_RGB_E
 
+echo "=== Downloading 3D sets ==="
 for i in 1 2 3 4; do
-  echo "[$(date '+%F %T')] downloading TD_3D_Set$i.zip ..."
-  curl -L --retry 3 -o "$OUT/TD_3D/TD_3D_Set$i.zip" "$BASE/TD_3D/TD_3D_Set$i.zip"
-  echo "[$(date '+%F %T')] extracting TD_3D_Set$i.zip ..."
-  unzip -o -q "$OUT/TD_3D/TD_3D_Set$i.zip" -d "$OUT/TD_3D"
-  rm "$OUT/TD_3D/TD_3D_Set$i.zip"
+  if [ -f "$OUT/TD_3D/TD_3D_Set$i.zip" ] || [ ! -f "$OUT/TD_3D/TD_3D_$(( (i-1)*25 + 1 )).ply" ]; then
+    echo "[$(date '+%F %T')] fetching TD_3D_Set$i.zip ..."
+    curl -C - -L --retry 5 -o "$OUT/TD_3D/TD_3D_Set$i.zip" "$BASE/TD_3D/TD_3D_Set$i.zip"
+    echo "[$(date '+%F %T')] extracting TD_3D_Set$i.zip ..."
+    unzip -o -q "$OUT/TD_3D/TD_3D_Set$i.zip" -d "$OUT/TD_3D"
+    rm -f "$OUT/TD_3D/TD_3D_Set$i.zip"
+  else
+    echo "TD_3D Set $i already present."
+  fi
 done
 
+echo "=== Downloading RGB expression sets ==="
 for i in 1 2 3 4; do
-  echo "[$(date '+%F %T')] downloading TD_RGB_E_Set$i.zip ..."
-  curl -L --retry 3 -o "$OUT/TD_RGB_E/TD_RGB_E_Set$i.zip" "$BASE/TD_RGB_E/TD_RGB_E_Set$i.zip"
+  echo "[$(date '+%F %T')] fetching TD_RGB_E_Set$i.zip ..."
+  curl -C - -L --retry 5 -o "$OUT/TD_RGB_E/TD_RGB_E_Set$i.zip" "$BASE/TD_RGB_E/TD_RGB_E_Set$i.zip"
   echo "[$(date '+%F %T')] extracting TD_RGB_E_Set$i.zip ..."
   unzip -o -q "$OUT/TD_RGB_E/TD_RGB_E_Set$i.zip" -d "$OUT/TD_RGB_E"
-  rm "$OUT/TD_RGB_E/TD_RGB_E_Set$i.zip"
+  rm -f "$OUT/TD_RGB_E/TD_RGB_E_Set$i.zip"
 done
 
-echo "[$(date '+%F %T')] DONE:"
-du -sh "$OUT"/TD_3D "$OUT"/TD_RGB_E
-find "$OUT/TD_3D" -name "*.ply" | wc -l
-find "$OUT/TD_RGB_E" -type f | wc -l
+echo "=== Download Complete ==="
+echo "PLY meshes: $(find "$OUT/TD_3D" -name "*.ply" | wc -l)"
+echo "RGB photos: $(find "$OUT/TD_RGB_E" -type f | wc -l)"

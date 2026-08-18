@@ -1,0 +1,16 @@
+id: E13
+name: 2d_vs_3d_tufts
+dataset: tufts3d
+protocols: [P1_closed, P2_disjoint]
+seeds: [0, 1, 2, 3, 4]
+arms:
+  - {key: 2D-PCA, feature: pca, matcher: nn_cosine}
+  - {key: 2D-HOG, feature: hog, matcher: nn_cosine}
+  - {key: 2D-Gabor, feature: gabor, matcher: nn_cosine}
+  - {key: 3D-DepthPCA, feature: depth_pca, matcher: nn_cosine}
+  - {key: 3D-NormalHOG, feature: normal_hog, matcher: nn_cosine}
+  - {key: 3D-CurvHist, feature: curv_hist, matcher: nn_chi2}
+evaluate:
+  identification: true
+  verification: true
+  timing: true

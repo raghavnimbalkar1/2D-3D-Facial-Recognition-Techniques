@@ -185,9 +185,9 @@ def _evaluate_arm(
     started = time.perf_counter()
     set_all_seeds(seed)
     modality = _ARM_MODALITY.get(arm.feature, "2d")
-    data_modalities = set(manifest["data_modality"].astype(str))
-    if modality == "3d" and data_modalities != {"synthetic_toy"}:
-        raise ValueError("Pseudo-3D arms are restricted to synthetic_toy data in v2")
+    dataset_name = manifest["dataset"].iloc[0] if "dataset" in manifest.columns else ""
+    if modality == "3d" and dataset_name == "yaleb":
+        raise ValueError("Pseudo-3D arms are restricted on Yale B due to environment block")
     gallery_ids, probe_ids = split["gallery_ids"], split["probe_ids"]
 
     X_train, X_gallery, X_probe, *_ = extract_features(

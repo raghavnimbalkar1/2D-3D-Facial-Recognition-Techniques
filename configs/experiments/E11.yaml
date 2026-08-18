@@ -1,0 +1,10 @@
+id: E11
+name: 2d_baselines_tufts
+dataset: tufts3d
+protocols: [P1_closed, P2_disjoint]
+seeds: [0, 1, 2, 3, 4]
+arms:
+  - {key: 2D-PCA, feature: pca, matcher: nn_cosine}
+  - {key: 2D-LBP, feature: lbp, matcher: nn_chi2}
+  - {key: 2D-HOG, feature: hog, matcher: nn_cosine}
+  - {key: 2D-Gabor, feature: gabor, matcher: nn_cosine}

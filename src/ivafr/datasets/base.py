@@ -48,7 +48,7 @@ class Cloud3D:
     def __post_init__(self) -> None:
         if self.points.ndim != 2 or self.points.shape[1] != 3:
             raise ValueError(f"points must be (N,3), got {self.points.shape}")
-        self.points = self.points.astype(np.float32)
+        object.__setattr__(self, "points", np.asarray(self.points, dtype=np.float32))
 
 
 class DatasetAdapter(ABC):

@@ -1,0 +1,8 @@
+# 3D preprocessing for Tufts Face Database SfM meshes
+range:
+  size: 64
+  fill: nearest
+  z_norm: std
+mesh:
+  projection: orthographic
+  crop_radius_ratio: 0.85

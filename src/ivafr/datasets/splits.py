@@ -37,16 +37,27 @@ def _frontal_neutral(df: pd.DataFrame, strict: dict[str, Any]) -> pd.Series:
     mask = (yaw == 0.0) & (pitch == 0.0)
     if strict.get("illumination") is not None:
         mask &= illum.isin(strict["illumination"])
+    if "expression" in df.columns and (df["expression"] == "neutral").any():
+        mask &= df["expression"].eq("neutral")
+
     # The cropped Yale B distribution has no semantic ``normal`` label; its
     # native lighting identifiers are yale:<index>. Use one deterministic
     # canonical capture per subject for P1 instead of silently producing an
-    # empty gallery. The illumination index is retained in the manifest and
-    # reported in the split metadata.
+    # empty gallery.
     if not mask.any() and df["dataset"].eq("yaleb").all():
         order = pd.to_numeric(illum.astype(str).str.extract(r"yale:(\d+)")[0], errors="coerce")
         mask = pd.Series(False, index=df.index)
         for _, group in df.assign(_illum_order=order).sort_values("_illum_order").groupby("subject_id"):
             mask.loc[group.index[0]] = True
+    elif mask.any():
+        # Ensure exactly one canonical gallery sample per subject
+        first_per_subj = pd.Series(False, index=df.index)
+        # Prioritize 2D neutral captures if available
+        has_2d_prio = np.where(df.get("has_2d", pd.Series(True, index=df.index)), 0, 1)
+        sorted_df = df.assign(_prio=has_2d_prio)
+        for _, group in sorted_df.loc[mask].sort_values("_prio").groupby("subject_id"):
+            first_per_subj.loc[group.index[0]] = True
+        mask = first_per_subj
     return mask
 
 
