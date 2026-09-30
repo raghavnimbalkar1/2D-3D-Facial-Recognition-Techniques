@@ -1,151 +1,104 @@
-# ivafr
+# IVAFR: 2D and 3D Facial Recognition Techniques
 
-`ivafr` is a configuration-driven research benchmark for comparing 2D facial
-recognition with monocular pseudo-3D facial geometry.
+IVAFR is a configuration-driven research benchmark for comparing classical 2D facial-recognition features with reconstructed 3D facial-geometry features.
 
-The project investigates how appearance-based and geometry-based facial
-features behave under changing illumination, and whether combining both
-modalities improves recognition. It is designed to make every experiment
-reproducible: datasets, preprocessing, features, matchers, evaluation
-protocols, and output locations are controlled by configuration files.
+The project asks which representation preserves identity information most reliably when appearance, expression, illumination, or the evaluation identity changes. Every experiment records its dataset, preprocessing configuration, feature extractor, matcher, protocol, seed, metrics, and runtime information.
 
-## Scope
+## Current status
 
-This sprint focuses on two data sources:
+The real-data 2D benchmark on the Tufts Face Database is complete.
 
-- **Toy dataset:** deterministic synthetic faces with rendered RGB images,
-  exact depth maps, and landmarks. This is used for development and CI.
-- **Extended Yale Face Database B:** real frontal face images captured under
-  varied lighting conditions. Raw Yale B images are not included in this
-  repository and are used for the 2D benchmark only this sprint.
+- 550 usable 2D portrait photographs from 110 subjects
+- Four methods: PCA, LBP, HOG, and spatial Gabor
+- P1 closed-set and P2 subject-disjoint protocols
+- Five seeds per method and protocol
+- 40 valid E11 metric files
+- 20 split files audited with 0 leakage violations
+- 69 focused tests passing
 
-The 3D modality is pseudo-3D rather than sensor-based. Toy data provides
-ground-truth depth. Yale B pseudo-3D is currently environment-blocked after
-three failed MediaPipe runtime paths. Real depth sensors, point-cloud
-processing, ICP, and depth CNNs are outside the current scope.
+The Tufts 3D and final 2D-versus-3D experiments are configured but remain separate follow-up work. Extended Yale B results are retained as historical 2D checkpoints; the earlier Yale pseudo-3D route is environment-blocked by the local MediaPipe runtime.
 
-## Methodology
+Final 2D results are available in [results/RESULTS.md](results/RESULTS.md). The complete project explanation and presentation guide is in [PROJECT_REPORT_AND_PRESENTATION_GUIDE.md](PROJECT_REPORT_AND_PRESENTATION_GUIDE.md).
 
-The benchmark provides a common pipeline for both modalities:
+## Methods
 
-1. Ingest images and create a manifest with subject, sample, illumination, and
-   quality metadata.
-2. Detect and align faces, then apply configurable illumination normalization.
-3. Extract 2D features such as PCA, LDA, LBP, HOG, and Gabor descriptors.
-4. Extract pseudo-3D features from depth-like maps, surface derivatives, and
-   FaceMesh landmarks.
-5. Compare features using nearest-neighbour and scikit-learn matchers, with
-   optional score-level and feature-level fusion.
-6. Evaluate closed-set identification and verification using rank accuracy,
-   CMC, precision/recall/F1, ROC/DET, EER, TAR at fixed FAR levels, and timing.
+- **PCA / Eigenfaces:** global appearance representation learned from the permitted training samples.
+- **LBP:** local texture descriptor based on neighborhood intensity comparisons.
+- **HOG:** local edge-orientation descriptor that emphasizes facial contours.
+- **Gabor:** multi-scale, multi-orientation response maps with spatial downsampling and train-only PCA.
 
-All experiments use subject-aware splits and fixed seeds. Each run records its
-resolved configuration, system information, metrics, curves, and intermediate
-artifacts under `results/runs/`.
+The benchmark reports Rank-1 and Rank-5 identification, CMC, EER, ROC/AUC, verification operating points, and timing where configured.
 
-## Quick start
+## Evaluation protocols
 
-Create an editable development installation and run the toy benchmark:
+- **P1 closed-set:** gallery and probe identities belong to the same identity pool.
+- **P2 subject-disjoint:** representation fitting uses one subject pool and evaluation uses separate unseen subjects.
+
+All splits are subject-aware and generated with fixed seeds. Feature reductions such as PCA are fitted only on the permitted training partition to avoid leakage.
+
+## Reproducibility
+
+The project uses Python 3.11 and a self-contained virtual environment managed by the Makefile.
 
 ```bash
 make setup
-make all
-```
-
-For the optional toy pseudo-3D path, install the additional dependency:
-
-```bash
-python -m pip install -e '.[dev,full]'
-```
-
-Run the test suite with:
-
-```bash
 make test
 ```
 
-The command-line interface exposes the individual stages as well:
+The functional test command used in the restricted audit environment is:
 
 ```bash
-ivafr --help
-ivafr dataset-build --name toy --data-root data
-ivafr ingest --dataset toy --data-root data
-ivafr preprocess --dataset toy --data-root data --modality both
+./.venv/bin/python -m pytest tests --ignore=tests/test_e2e.py -q -o addopts='' -p no:cov
 ```
 
-## Tufts Face Database setup
+## Tufts 2D benchmark
 
-Tufts Face Database provides 112 participant SfM-reconstructed 3D meshes (TD_3D)
-and 5-expression 2D photos (TD_RGB_E).
-
-Fetch and extract the dataset via:
+The Tufts Face Database is not included in this repository. It must be obtained under its applicable research-use terms.
 
 ```bash
 bash scripts/fetch_tufts.sh data/raw
+make tufts-ingest
+./.venv/bin/ivafr preprocess --dataset tufts3d --data-root data --modality 2d
+make tufts-splits
+./.venv/bin/ivafr run --exp E11 --data-root data --results-root results
+./.venv/bin/python scripts/verify_no_leakage.py --data-root data
+./.venv/bin/ivafr aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
 ```
 
-Then run the full pipeline:
+E11 evaluates four 2D methods across P1 and P2 with five seeds. The expected output is 40 `metrics.json` files and an updated `results/RESULTS.md`.
 
-```bash
-make tufts-all
-```
-
-Or individual stages:
-
-```bash
-ivafr ingest --dataset tufts3d --data-root data
-ivafr preprocess --dataset tufts3d --data-root data --modality both
-ivafr splits --dataset tufts3d --data-root data --protocol P1_closed --protocol P2_disjoint --seeds 0 --seeds 1 --seeds 2 --seeds 3 --seeds 4
-ivafr run --exp E11 --exp E12 --exp E13 --data-root data --results-root results
-ivafr aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
-```
-
-## Yale B setup
-
-Download Extended Yale Face Database B from its [official distribution](https://cvc.cs.yale.edu/cvc/projects/yalefacesB/yalefacesB.html), extract it under:
+## Pipeline
 
 ```text
-data/raw/yaleb/
+raw images
+  -> ingestion and manifest
+  -> face preprocessing and alignment
+  -> subject-aware splits
+  -> feature extraction
+  -> similarity matching
+  -> identification and verification metrics
+  -> aggregation and report generation
 ```
 
-Then run the dataset stages:
-
-```bash
-ivafr ingest --dataset yaleb --data-root data
-ivafr preprocess --dataset yaleb --data-root data --modality 2d
-```
-
-Set the OpenCV DNN detector model paths before preprocessing real Yale B:
-
-```bash
-export IVAFR_FACE_DNN_PROTO=/path/to/deploy.prototxt
-export IVAFR_FACE_DNN_MODEL=/path/to/res10_300x300_ssd_iter_140000.caffemodel
-```
-
-Yale B images remain local and are never copied into result artifacts. Real
-Yale B metrics are tagged `data_modality: real`; toy 3D and fusion metrics are
-tagged `data_modality: synthetic_toy` and must not be merged with real rows.
+For Tufts studio portraits, Haar detection is attempted first. If it cannot detect the centered portrait, the configured centered-portrait fallback is recorded explicitly in the preprocessing output. This assumption is specific to the controlled dataset and is not presented as a general-purpose detector.
 
 ## Repository layout
 
 ```text
 configs/       Dataset, preprocessing, feature, matcher, and experiment configs
 src/ivafr/     Dataset adapters, preprocessing, features, matching, and evaluation
-scripts/       Utility scripts for toy data and leakage checks
-tests/         Unit and end-to-end tests
-docs/          Dataset, protocol, ethics, decisions, and environment notes
-results/       Generated runs, figures, tables, and summaries
+scripts/       Dataset and verification utilities
+tests/         Unit and integration tests
+docs/          Dataset, protocol, ethics, decisions, and result preamble
+results/       Tracked summaries; generated runs and tables are ignored
 ```
 
-## Current status
+## Data and generated files
 
-The project supports procedural toy validation (`make all`) and real 2D vs 3D
-evaluation on the Tufts Face Database (`make tufts-all`). Reconstructed 3D PLY
-meshes are projected to range images, surface normals, and curvature maps,
-enabling comparison against 2D appearance features (PCA, LBP, HOG, Gabor).
+Raw datasets, processed data, caches, model weights, virtual environments, and generated run artifacts are excluded by `.gitignore`. Source code, configuration, tests, documentation, and the aggregated result summary remain trackable.
 
-## License and data
+See [docs/DATASETS.md](docs/DATASETS.md) and [docs/ETHICS.md](docs/ETHICS.md) for dataset terms and handling guidance.
 
-The project code is released under the MIT License. Dataset terms are separate
-from the code license; see `docs/DATASETS.md` and `docs/ETHICS.md` before
-redistributing data or derived artifacts.
+## License
+
+The project code is released under the MIT License. Dataset licenses and research-use terms are separate from the code license.

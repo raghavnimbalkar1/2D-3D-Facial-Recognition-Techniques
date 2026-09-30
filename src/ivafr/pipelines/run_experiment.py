@@ -88,6 +88,17 @@ def run_experiment(
     data_root = Path(data_root)
     results_root = Path(results_root)
     manifest = read_manifest(data_root / "processed" / exp.dataset / "manifest.csv")
+    # A paired dataset such as Tufts contains both one 3D mesh and several 2D
+    # photos per subject.  Single-modality experiments must build their splits
+    # from the corresponding sample pool; otherwise a 2D arm can accidentally
+    # select the mesh as its gallery sample (and vice versa).
+    requested_modalities = {_ARM_MODALITY.get(arm.feature, "2d") for arm in exp.arms}
+    if len(requested_modalities) == 1:
+        requested = next(iter(requested_modalities))
+        column = "has_2d" if requested == "2d" else "has_3d"
+        manifest = manifest.loc[manifest[column].astype(bool)].reset_index(drop=True)
+        if manifest.empty:
+            raise ValueError(f"No samples available for {requested} experiment {exp.id}")
     modalities = set(manifest["data_modality"].astype(str))
     if len(modalities) != 1:
         raise ValueError(f"One experiment cannot mix data modalities: {sorted(modalities)}")

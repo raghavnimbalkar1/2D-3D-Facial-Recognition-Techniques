@@ -1,6 +1,9 @@
 # Default toy/CI 2D preprocessing: detect -> align (112/64).
 detector:
   method: haar
+  # Tufts uses controlled, centered frontal portraits.
+  center_portrait_fallback: true
+  center_scale: 0.72
 align:
   size_112: 112
   size_64: 64

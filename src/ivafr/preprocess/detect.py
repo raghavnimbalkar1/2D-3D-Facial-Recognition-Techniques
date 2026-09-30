@@ -137,6 +137,13 @@ def landmarks_from_bbox(bbox: tuple[int, int, int, int]) -> np.ndarray:
     )
 
 
+def _center_portrait_bbox(img: np.ndarray, scale: float = 0.72) -> tuple[int, int, int, int]:
+    """Square crop for controlled datasets with centered frontal portraits."""
+    h, w = img.shape[:2]
+    side = max(1, min(int(min(h, w) * float(scale)), h, w))
+    return max(0, (w - side) // 2), max(0, (h - side) // 2), side, side
+
+
 def detect_face(
     img: np.ndarray,
     gt_landmarks: np.ndarray | None = None,
@@ -173,5 +180,9 @@ def detect_face(
         if lms.shape == (5, 2):
             bbox = bbox_from_landmarks(lms)
             return DetectResult(bbox, lms, "ground_truth", True)
+
+    if bool(cfg.get("center_portrait_fallback", False)):
+        bbox = _center_portrait_bbox(img, float(cfg.get("center_scale", 0.72)))
+        return DetectResult(bbox, landmarks_from_bbox(bbox), "center_portrait", True)
 
     return DetectResult((0, 0, 0, 0), None, "none", False)

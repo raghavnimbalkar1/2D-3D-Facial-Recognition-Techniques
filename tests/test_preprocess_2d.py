@@ -6,6 +6,7 @@ import numpy as np
 
 from ivafr.datasets.toy import TOY_CANONICAL_5PT, _render_face, _FaceParams
 from ivafr.preprocess.align2d import TEMPLATE_112, align_to_template, similarity_transform
+from ivafr.preprocess.detect import detect_face
 from ivafr.preprocess.illum import normalize_illum
 
 
@@ -63,6 +64,14 @@ def test_illumination_preserves_pixel_spread():
         out = normalize_illum(a, method)
         assert float(out.std()) > 0.05
         assert float(out.max() - out.min()) > 0.25
+
+
+def test_center_portrait_fallback_is_explicit():
+    img = np.zeros((300, 400, 3), dtype=np.uint8)
+    result = detect_face(img, detector_cfg={"center_portrait_fallback": True})
+    assert result.ok
+    assert result.source == "center_portrait"
+    assert result.landmarks.shape == (5, 2)
 
 
 def test_cache_mark_and_hit(tmp_path):

@@ -1,79 +1,50 @@
 # Results
 
-## Current Status
+## Current status
 
-The benchmark evaluates both 2D appearance features (PCA, LBP, HOG, Gabor) and
-3D facial geometry features (DepthPCA, DepthLBP, NormalHOG, CurvHist) on:
+The Tufts real-data 2D benchmark is complete. The dataset contains 110
+reconstructed meshes and 550 usable RGB expression photographs. E11 evaluated
+four 2D methods—PCA, LBP, HOG, and spatial Gabor—under P1 closed-set and P2
+subject-disjoint protocols, using five seeds per method and protocol.
 
-1. **Synthetic validation path**: The procedural `toy` dataset (`make all`),
-   providing ground-truth 3D depth maps and landmarks.
-2. **Real 2D-vs-3D benchmark**: The Tufts Face Database (`tufts3d`), featuring
-   SfM-reconstructed 3D meshes (TD_3D) and expression/occlusion-varied 2D
-   photos (TD_RGB_E) across 112 participants.
-3. **2D illumination baseline**: Extended Yale Face Database B (`yaleb`),
-   providing extreme lighting angles across 38 subjects.
+This produces 40 valid E11 metric files. The split audit checked 20 split files
+across toy and Tufts data and found 0 leakage violations. The 2D preprocessing
+path produced valid aligned crops for all 550 Tufts photos. Because Tufts is a
+controlled centered-portrait dataset, preprocessing attempts Haar detection
+first and records an explicit centered-portrait fallback when Haar cannot find
+the face.
 
-The deterministic toy dataset is the current end-to-end validation path for
-the pipeline and pseudo-3D methodology. Toy outputs are generated locally by
-`make all`; they are synthetic proof-of-concept results and must not be
-interpreted as evidence about real-world recognition performance.
+## Main Tufts 2D results
 
-Yale B ingestion has been verified on real images: the adapter discovers 2,414
-images across 38 subjects. However, real-data pseudo-3D preprocessing is
-blocked in the current macOS execution environment. MediaPipe 0.10.21 legacy
-FaceMesh, MediaPipe Tasks with an explicit CPU delegate, and an isolated
-MediaPipe 0.10.9 installation all fail during native graph initialization
-with an OpenGL/GPU service error. Consequently, no Yale B pseudo-3D metrics
-are reported here.
+Values below are means ± standard deviations over five seeds.
 
-## Corrected real-data 2D checkpoint
+| Method | P1 Rank-1 | P1 EER | P1 AUC | P2 Rank-1 | P2 EER | P2 AUC |
+|---|---:|---:|---:|---:|---:|---:|
+| PCA | 90.23% ± 0.00 | 4.61% ± 0.03 | 0.986 | 90.08% ± 2.18 | 6.78% ± 0.35 | 0.979 |
+| LBP | 90.91% ± 0.00 | 6.14% ± 0.05 | 0.982 | 91.97% ± 1.68 | 6.08% ± 0.56 | 0.982 |
+| HOG | 96.14% ± 0.00 | 4.09% ± 0.00 | 0.986 | 96.52% ± 1.08 | 3.84% ± 0.45 | 0.986 |
+| Gabor | 96.59% ± 0.00 | 2.18% ± 0.00 | 0.993 | 94.77% ± 1.45 | 5.20% ± 0.57 | 0.984 |
 
-The initial Yale B checkpoint was invalid: the CLAHE conversion collapsed
-most cached crops to near-constant black images. The cache was deleted,
-preprocessing was rebuilt, and these corrected results were produced from
-single-seed PCA runs. They are not the final five-seed report:
+P1 has 110 gallery identities, so chance Rank-1 is 0.91%. P2 has 66
+evaluation identities, so chance Rank-1 is 1.52%. HOG is strongest on P2
+identification, while Gabor is strongest on P1 identification and P1 EER.
 
-| Experiment | Protocol | Arm | Rank-1 | EER | AUC |
-|---|---|---|---:|---:|---:|
-| E01 | P1 closed | 2D-PCA | 0.3956 | 0.4058 | 0.6209 |
-| E01 | P2 disjoint | 2D-PCA | 0.4882 | 0.4830 | 0.5394 |
+## Dataset separation and limitations
 
-P1 is a 38-way identification problem with a 2.63% chance baseline, so the
-corrected Rank-1 result is 15.03x chance. P2 uses 15 background subjects and
-23 evaluation subjects, giving a 23-way gallery and a 4.35% chance baseline;
-its corrected Rank-1 result is 11.23x chance. Aggregated tables now report
-both raw Rank-1 and Rank-1 divided by the protocol's chance baseline.
-
-For P1, several moderate-light conditions reached 100% Rank-1, while
-conditions such as `A+000E+90` and `A+035E+65` reached 2.63% (1/38). For P2,
-the strongest conditions reached 100% Rank-1, while `A+110E+15` reached 0%
-and several neighboring extreme-light conditions reached 4.35% (1/23).
-The corrected crop cache contains nonzero pixel spread for all 2,414 images.
-
-The earlier E05, E08, and E10 single-seed numbers were generated before this
-fix and are superseded; those experiments must be rerun before being used.
-All corrected values remain engineering checkpoints until the configured
-seeds and arms have been run and reviewed.
-
-## Interpretation and limitations
-
-- Any toy metrics are synthetic development checks, not final scientific
-  results.
-- The preliminary Yale B 2D checkpoint is not yet the complete five-seed
-  benchmark.
-- A real Yale B 2D-versus-pseudo-3D comparison remains future work until the
-  MediaPipe runtime is available in a compatible execution environment.
-- The pseudo-3D modality must be labelled as monocular reconstructed geometry,
-  not physical 3D sensor data.
+Toy metrics are synthetic development checks. Yale B values in the repository
+are historical corrected 2D checkpoints and are not mixed with Tufts results.
+The Yale pseudo-3D route remains blocked by the local MediaPipe runtime. The
+remaining real-data work is E12/E13, which covers the Tufts 3D and 2D-vs-3D
+comparison; it does not block the completed 2D E11 benchmark.
 
 ## Reproduction
 
-Use the following commands to regenerate the current toy outputs:
-
 ```bash
-make setup
-make all
+bash scripts/fetch_tufts.sh data/raw
+make tufts-ingest
+./.venv/bin/ivafr preprocess --dataset tufts3d --data-root data --modality 2d
+make tufts-splits
+./.venv/bin/ivafr run --exp E11 --data-root data --results-root results
+./.venv/bin/python scripts/verify_no_leakage.py --data-root data
+./.venv/bin/ivafr aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
 ```
-
-Generated run artifacts belong under `results/runs/` and are intentionally
-excluded from version control.
