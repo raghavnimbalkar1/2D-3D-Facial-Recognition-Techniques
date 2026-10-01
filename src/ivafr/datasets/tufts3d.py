@@ -49,6 +49,8 @@ def parse_ply(path: str | Path) -> tuple[np.ndarray, np.ndarray | None]:
     n_header = 0
     n_vert = 0
     vertex_props: list[str] = []
+    in_vertices = False
+    ascii_format = False
     with p.open("rb") as fh:
         while True:
             line = fh.readline()
@@ -57,10 +59,16 @@ def parse_ply(path: str | Path) -> tuple[np.ndarray, np.ndarray | None]:
             n_header += 1
             if n_header == 1 and line.strip() != b"ply":
                 raise ValueError(f"Not a PLY file: {p}")
-            if line.startswith(b"element vertex"):
-                n_vert = int(line.split()[-1])
-            elif line.startswith(b"property"):
+            if line.startswith(b"format ascii 1.0"):
+                ascii_format = True
+            elif line.startswith(b"element"):
+                in_vertices = line.split()[1] == b"vertex"
+                if in_vertices:
+                    n_vert = int(line.split()[-1])
+            elif line.startswith(b"property") and in_vertices:
                 parts = line.split()
+                if parts[1] == b"list":
+                    raise ValueError("List-valued vertex properties are unsupported")
                 vertex_props.append(parts[-1].decode())
             elif line.startswith(b"format binary"):
                 raise ValueError(
@@ -68,16 +76,17 @@ def parse_ply(path: str | Path) -> tuple[np.ndarray, np.ndarray | None]:
                 )
             elif line.startswith(b"end_header"):
                 break
-    data = np.loadtxt(p, skiprows=n_header, max_rows=n_vert, dtype=np.float32)
-    if data.ndim != 2:
+    if not ascii_format or n_vert < 1 or not {"x", "y", "z"} <= set(vertex_props):
+        raise ValueError(f"PLY needs ASCII xyz vertices: {p}")
+    data = np.loadtxt(p, skiprows=n_header, max_rows=n_vert, dtype=np.float32, ndmin=2)
+    if data.shape != (n_vert, len(vertex_props)):
         raise ValueError(f"Malformed vertex block in {p}")
-    xyz_cols = [idx for idx, name in enumerate(vertex_props) if name in ("x", "y", "z")]
-    rgb_cols = [
-        idx
-        for idx, name in enumerate(vertex_props)
-        if name in ("diffuse_red", "diffuse_green", "diffuse_blue")
-    ]
+    xyz_cols = [vertex_props.index(name) for name in ("x", "y", "z")]
+    rgb_names = ("diffuse_red", "diffuse_green", "diffuse_blue")
+    rgb_cols = [vertex_props.index(name) for name in rgb_names if name in vertex_props]
     points = data[:, xyz_cols].astype(np.float32)
+    if not np.isfinite(points).all():
+        raise ValueError(f"Non-finite PLY coordinates: {p}")
     rgb = None
     if len(rgb_cols) == 3 and data.shape[1] > max(xyz_cols + rgb_cols):
         rgb = np.clip(data[:, rgb_cols], 0, 255).astype(np.uint8)
@@ -95,7 +104,7 @@ class Tufts3DAdapter(DatasetAdapter):
         mesh_root = self.raw_root / "TD_3D"
         photo_root = self.raw_root / "TD_RGB_E"
 
-        if not mesh_root.is_dir():
+        if not mesh_root.is_dir() and not photo_root.is_dir():
             raise FileNotFoundError(
                 f"Tufts TD_3D missing at {mesh_root}. Run scripts/fetch_tufts.sh"
             )
@@ -121,7 +130,11 @@ class Tufts3DAdapter(DatasetAdapter):
                 expr_idx = int(m_expr.group(1)) if m_expr else 1
                 expr_name = _EXPR_MAP.get(expr_idx, f"expr_{expr_idx}")
                 subject_id = f"S{s_num:03d}"
-                photos_by_subject.setdefault(subject_id, {})[expr_name] = img
+                if expr_name in photos_by_subject.setdefault(subject_id, {}):
+                    raise ValueError(f"Ambiguous duplicate photo: {subject_id}/{expr_name}")
+                photos_by_subject[subject_id][expr_name] = img
+
+        mesh_subjects = set()
 
         for ply in sorted(mesh_root.glob("TD_3D_*.ply")):
             m = _PLY_RE.match(ply.name)
@@ -129,6 +142,7 @@ class Tufts3DAdapter(DatasetAdapter):
                 continue
             s_num = int(m.group(1))
             subject_id = f"S{s_num:03d}"
+            mesh_subjects.add(subject_id)
             photos = photos_by_subject.get(subject_id, {})
 
             # 1. Add 3D mesh sample
@@ -146,7 +160,8 @@ class Tufts3DAdapter(DatasetAdapter):
                         "illumination": "normal",
                         "occlusion": "none",
                         "session": "s1",
-                        "n_points": 250000,
+                        "n_points": len(parse_ply(ply)[0]),
+                        "geometry_units": "arbitrary_sfm",
                         "notes": "sfm_mesh",
                     },
                 )
@@ -174,9 +189,40 @@ class Tufts3DAdapter(DatasetAdapter):
                     )
                 )
 
+        # Photo-only input is supported. Paired downloads retain the historical
+        # mesh-matched cohort explicitly; unmatched photos are not silently added.
+        if not mesh_subjects:
+            for subject_id, photos in sorted(photos_by_subject.items()):
+                for expr_name, photo_path in sorted(photos.items()):
+                    samples.append(
+                        Sample(
+                            dataset=self.name,
+                            subject_id=subject_id,
+                            sample_id=f"{subject_id}_{expr_name}",
+                            path_2d=photo_path,
+                            meta={
+                                "expression": expr_name,
+                                "pose_yaw": 0.0,
+                                "pose_pitch": 0.0,
+                                "illumination": "normal",
+                                "occlusion": "sunglasses" if expr_name == "sunglasses" else "none",
+                                "session": "s1",
+                                "notes": "photo_only_cohort",
+                            },
+                        )
+                    )
+        excluded = sorted(set(photos_by_subject) - mesh_subjects) if mesh_subjects else []
+        self.discovery_report = {
+            "cohort": "mesh_matched" if mesh_subjects else "photo_only",
+            "excluded_photo_subjects": excluded,
+        }
         if not samples:
-            raise FileNotFoundError(f"No TD_3D meshes found under {mesh_root}")
-        log.info("Tufts3DAdapter discovered %d samples across %d subjects", len(samples), len(set(s.subject_id for s in samples)))
+            raise FileNotFoundError(f"No Tufts captures found under {self.raw_root}")
+        log.info(
+            "Tufts3DAdapter discovered %d samples across %d subjects",
+            len(samples),
+            len(set(s.subject_id for s in samples)),
+        )
         return samples
 
     def load_2d(self, s: Sample) -> np.ndarray:

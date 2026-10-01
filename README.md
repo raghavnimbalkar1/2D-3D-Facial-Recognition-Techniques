@@ -6,19 +6,23 @@ The project asks which representation preserves identity information most reliab
 
 ## Current status
 
-The real-data 2D benchmark on the Tufts Face Database is complete.
+The four 2D methods (PCA, LBP, HOG and spatial Gabor) are implemented. The
+historical Tufts E11 summary describes 550 photos, 110 subjects and 40 runs,
+but the raw data and run artifacts are absent from this checkout. Those
+numbers have **not been recertified** under the current validation rules.
 
-- 550 usable 2D portrait photographs from 110 subjects
-- Four methods: PCA, LBP, HOG, and spatial Gabor
-- P1 closed-set and P2 subject-disjoint protocols
-- Five seeds per method and protocol
-- 40 valid E11 metric files
-- 20 split files audited with 0 leakage violations
-- 69 focused tests passing
+The pipeline now consumes audited, persisted splits; checks raw/cache/run
+content hashes; records conservative verification operating points and
+subject-cluster confidence intervals; and measures feature/matching time.
+E14 adds controlled probe occlusion for all four 2D methods.
 
-The Tufts 3D and final 2D-versus-3D experiments are configured but remain separate follow-up work. Extended Yale B results are retained as historical 2D checkpoints; the earlier Yale pseudo-3D route is environment-blocked by the local MediaPipe runtime.
+Real E12/E13 evaluation is blocked by the available Tufts design: one mesh
+per person cannot supply independent same-modality gallery and probe captures.
+Reprojections or image-derived geometry cannot fill that requirement.
 
-Final 2D results are available in [results/RESULTS.md](results/RESULTS.md). The complete project explanation and presentation guide is in [PROJECT_REPORT_AND_PRESENTATION_GUIDE.md](PROJECT_REPORT_AND_PRESENTATION_GUIDE.md).
+See [implementation status and acceptance commands](docs/IMPLEMENTATION_STATUS.md)
+for current evidence and remaining gates. [Historical results](results/RESULTS.md)
+are retained for comparison, not as proof of current completion.
 
 ## Methods
 
@@ -38,18 +42,21 @@ All splits are subject-aware and generated with fixed seeds. Feature reductions 
 
 ## Reproducibility
 
-The project uses Python 3.11 and a self-contained virtual environment managed by the Makefile.
+Use Python 3.10–3.12. The checked-in dependency lock is consumed during setup,
+never overwritten by it. From PowerShell:
 
-```bash
-make setup
-make test
+```powershell
+py -3.12 -m venv .venv
+.venv/Scripts/python.exe -m pip install -r docs/env_lockfile.txt
+.venv/Scripts/python.exe -m pip install --no-deps --no-build-isolation -e .
+.venv/Scripts/python.exe -m pip check
+.venv/Scripts/python.exe -m pytest
 ```
 
-The functional test command used in the restricted audit environment is:
-
-```bash
-./.venv/bin/python -m pytest tests --ignore=tests/test_e2e.py -q -o addopts='' -p no:cov
-```
+On Linux/macOS, `make setup PYTHON=python3.12` installs the same lock;
+`make test` includes end-to-end tests and coverage. `make all` runs and
+audits the complete synthetic E00 matrix. Synthetic results validate the
+methodology, not real-world recognition accuracy.
 
 ## Tufts 2D benchmark
 
@@ -59,13 +66,19 @@ The Tufts Face Database is not included in this repository. It must be obtained 
 bash scripts/fetch_tufts.sh data/raw
 make tufts-ingest
 ./.venv/bin/ivafr preprocess --dataset tufts3d --data-root data --modality 2d
-make tufts-splits
-./.venv/bin/ivafr run --exp E11 --data-root data --results-root results
+./.venv/bin/ivafr splits --dataset tufts3d --data-root data --modality 2d
+./.venv/bin/ivafr run --exp E11 --data-root data --results-root results/tufts-current
 ./.venv/bin/python scripts/verify_no_leakage.py --data-root data
-./.venv/bin/ivafr aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
+./.venv/bin/python scripts/verify_experiment.py --exp E11 --data-root data --results-root results/tufts-current
+./.venv/bin/ivafr aggregate --results-root results/tufts-current --out results/tufts-current
 ```
 
-E11 evaluates four 2D methods across P1 and P2 with five seeds. The expected output is 40 `metrics.json` files and an updated `results/RESULTS.md`.
+E11 requires 40 completed runs. On Windows, use `.venv/Scripts/ivafr.exe`
+and `.venv/Scripts/python.exe` in the commands above; extract the downloaded
+dataset to `data/raw/TD_RGB_E` (optionally `data/raw/TD_3D`). Photo-only and
+mesh-matched cohorts are distinguished in `ingestion.json`. Generate splits
+after preprocessing. Use a fresh results root when configuration, code or
+data changes; aggregation rejects duplicate or incompatible run families.
 
 ## Pipeline
 

@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-ivafr = "ivafr.cli:app"
+ivafr = "ivafr.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -48,6 +48,7 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "-q --cov=ivafr --cov-report=term-missing"
 pythonpath = ["src"]
+markers = ["slow: end-to-end experiment matrix tests (included by default)"]
 
 [tool.ruff]
 line-length = 100

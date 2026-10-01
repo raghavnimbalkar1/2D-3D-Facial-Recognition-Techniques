@@ -19,7 +19,9 @@ log = get_logger("pipelines.extract")
 _MODALITY_DIR = {"2d": "crops2d", "pseudo3d": "crops2d", "3d": "range"}
 
 
-def _load_arrays(interim: Path, manifest: pd.DataFrame, modality: str, ids: list[str], feature_name: str = "") -> dict[str, np.ndarray]:
+def _load_arrays(
+    interim: Path, manifest: pd.DataFrame, modality: str, ids: list[str], feature_name: str = ""
+) -> dict[str, np.ndarray]:
     """Load preprocessed arrays for the given sample ids."""
     subdir = _MODALITY_DIR[modality]
     ext = ".npy"
@@ -42,7 +44,9 @@ def _load_arrays(interim: Path, manifest: pd.DataFrame, modality: str, ids: list
             continue
         path = interim / subdir / str(row["subject_id"]) / f"{sid}_{prefix}{ext}"
         if not path.is_file():
-            raise FileNotFoundError(f"Preprocessed array missing: {path} (run `ivafr preprocess` first)")
+            raise FileNotFoundError(
+                f"Preprocessed array missing: {path} (run `ivafr preprocess` first)"
+            )
         out[sid] = np.load(path)
     missing = id_set - set(out)
     if missing:
@@ -61,6 +65,9 @@ def extract_features(
     modality: str,
     seed: int = 0,
     probe_augmentation: dict | None = None,
+    timing: dict | None = None,
+    timing_repeats: int = 5,
+    timing_warmups: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str], list[str], list[str]]:
     """Extract features for a split; returns (X_train, X_gallery, X_probe, ...).
 
@@ -69,14 +76,29 @@ def extract_features(
     from ivafr.seeding import set_all_seeds
 
     set_all_seeds(seed)
-    arrays = _load_arrays(interim, manifest, modality, list(set(train_ids) | set(gallery_ids) | set(probe_ids)), feature_name)
+    arrays = _load_arrays(
+        interim,
+        manifest,
+        modality,
+        list(set(train_ids) | set(gallery_ids) | set(probe_ids)),
+        feature_name,
+    )
 
     cls = get_feature(feature_name)
     extractor = cls(feature_params)
 
     subj_of = dict(zip(manifest["sample_id"].astype(str), manifest["subject_id"].astype(str)))
     y_train = np.asarray([subj_of[i] for i in train_ids])
-    X_train = extractor.fit([arrays[i] for i in train_ids], y_train).transform([arrays[i] for i in train_ids])
+    train_arrays = [arrays[i] for i in train_ids]
+    if timing is not None:
+        from ivafr.evaluation.timing import time_callable
+
+        timing["fit"] = time_callable(
+            lambda: extractor.fit(train_arrays, y_train), timing_repeats, timing_warmups
+        )
+    else:
+        extractor.fit(train_arrays, y_train)
+    X_train = extractor.transform(train_arrays)
     X_gallery = extractor.transform([arrays[i] for i in gallery_ids])
     probe_arrays = [arrays[i] for i in probe_ids]
     if probe_augmentation:
@@ -92,6 +114,10 @@ def extract_features(
             for j, x in enumerate(probe_arrays)
         ]
     X_probe = extractor.transform(probe_arrays)
+    if timing is not None:
+        timing["transform"] = time_callable(
+            lambda: extractor.transform(probe_arrays), timing_repeats, timing_warmups
+        )
     log.info(
         "%s: fit on %d train, dim=%s, gallery=%d probe=%d",
         feature_name,

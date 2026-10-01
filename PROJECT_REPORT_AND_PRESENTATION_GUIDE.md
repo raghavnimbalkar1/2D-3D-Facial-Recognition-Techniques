@@ -1,3 +1,5 @@
+> Historical snapshot. Current implementation and acceptance status: [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md). Earlier completion counts and running-process claims below are not current evidence. The real 3D protocol requires independent repeated captures.
+
 # 2D and 3D Facial Recognition Techniques
 
 ## Current project report and presentation guide

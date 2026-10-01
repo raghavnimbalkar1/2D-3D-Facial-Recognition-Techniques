@@ -5,15 +5,22 @@ from __future__ import annotations
 import numpy as np
 
 
-def occlude(image: np.ndarray, kind: str = "sunglasses", fraction: float = 0.3, seed: int = 0) -> np.ndarray:
+def occlude(
+    image: np.ndarray, kind: str = "sunglasses", fraction: float = 0.3, seed: int = 0
+) -> np.ndarray:
     """Return a copy with a deterministic rectangular occluder."""
     out = np.asarray(image).copy()
     h, w = out.shape[:2]
     rng = np.random.default_rng(seed)
-    frac = float(np.clip(fraction, 0.01, 0.95))
+    frac = float(fraction)
+    if not 0 < frac < 1 or kind not in {"sunglasses", "block", "random"}:
+        raise ValueError("Invalid occlusion kind or fraction")
     if kind == "sunglasses":
-        y0, y1 = int(h * 0.28), int(h * 0.48)
-        x0, x1 = int(w * 0.08), int(w * 0.92)
+        bw = min(w, max(int(round(w * 0.84)), int(np.ceil(w * frac))))
+        bh = max(1, min(h, int(round(h * w * frac / bw))))
+        x0 = (w - bw) // 2
+        y0 = max(0, min(h - bh, int(round(h * 0.38 - bh / 2))))
+        y1, x1 = y0 + bh, x0 + bw
     else:
         area = max(1, int(h * w * frac))
         bh = max(1, int(np.sqrt(area)))

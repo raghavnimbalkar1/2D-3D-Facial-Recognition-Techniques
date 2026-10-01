@@ -7,7 +7,7 @@ import pytest
 
 from ivafr.registry import get_feature, list_features
 
-EXPECTED = {"pca", "depth_pca"}
+EXPECTED = {"pca", "lbp", "hog", "gabor", "depth_pca", "depth_lbp", "normal_hog", "curv_hist"}
 
 
 def test_registry_contents():
@@ -24,6 +24,8 @@ def test_fit_transform_contract(name):
     cls = get_feature(name)
     feat = cls({})
     X = _make_inputs("3d" if "depth" in name else "2d")
+    if name in {"normal_hog", "curv_hist"}:
+        X = [np.repeat(x[..., None], 3, axis=2) for x in X]
     feat.fit(X, np.arange(len(X)))
     out = feat.transform(X)
     assert out.shape == (len(X), feat.feature_dim())
@@ -82,9 +84,21 @@ def test_unknown_feature_raises():
         get_feature("not_a_feature")
 
 
+def test_drop_first_k_removes_leading_basis():
+    inputs = _make_inputs("2d", n=12, h=8)
+    full = get_feature("pca")({"variance_keep": 1, "max_components": 8}).fit(inputs)
+    dropped = get_feature("pca")({"variance_keep": 1, "max_components": 8, "drop_first_k": 2}).fit(
+        inputs
+    )
+    np.testing.assert_allclose(dropped.eigenfaces, full.eigenfaces[2:])
+    np.testing.assert_allclose(dropped.transform(inputs), full.transform(inputs)[:, 2:], atol=1e-5)
+
+
 def test_gabor_preserves_spatial_variation_before_pca():
     cls = get_feature("gabor")
-    feat = cls({"frequencies": [0.1, 0.2], "orientations": 2, "downsample_factor": 4, "pca_components": 8})
+    feat = cls(
+        {"frequencies": [0.1, 0.2], "orientations": 2, "downsample_factor": 4, "pca_components": 8}
+    )
     a = np.zeros((64, 64), dtype=np.float32)
     a[16:48, 24:40] = 1.0
     b = np.zeros((64, 64), dtype=np.float32)

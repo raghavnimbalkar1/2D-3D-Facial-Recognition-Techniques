@@ -8,9 +8,15 @@ import time
 from typing import Any, Callable
 
 
-def time_callable(fn: Callable[[], Any], repeats: int = 5) -> dict[str, float | int]:
+def time_callable(
+    fn: Callable[[], Any], repeats: int = 5, warmups: int = 1
+) -> dict[str, float | int]:
     """Measure a callable and return median plus repeat statistics in ms."""
     values = []
+    if repeats < 1 or warmups < 0:
+        raise ValueError("Invalid timing repetitions")
+    for _ in range(warmups):
+        fn()
     for _ in range(max(1, int(repeats))):
         start = time.perf_counter()
         fn()
@@ -20,5 +26,6 @@ def time_callable(fn: Callable[[], Any], repeats: int = 5) -> dict[str, float | 
         "mean_ms": float(statistics.mean(values)),
         "std_ms": float(statistics.pstdev(values)),
         "repeats": len(values),
+        "warmups": warmups,
         "python": platform.python_version(),
     }

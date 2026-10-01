@@ -7,6 +7,7 @@ import json
 import pytest
 
 from ivafr.pipelines.aggregate import collect_metrics, render_extended, render_t1
+import pandas as pd
 
 
 def test_chance_normalized_rank1_is_gallery_aware(tmp_path):
@@ -37,7 +38,29 @@ def test_chance_normalized_rank1_is_gallery_aware(tmp_path):
         encoding="utf-8",
     )
 
-    frame = collect_metrics(tmp_path)
+    # Historical metrics without a completion record cannot certify a run.
+    with pytest.raises(ValueError, match="Incomplete"):
+        collect_metrics(tmp_path)
+    m = json.loads(metrics_path.read_text(encoding="utf-8"))
+    frame = pd.DataFrame(
+        [
+            {
+                **m["identification"],
+                "gallery_size": 23,
+                "chance_rank1": 1 / 23,
+                "rank1_over_chance": 0.5 * 23,
+                "exp_id": "E01",
+                "arm": "2D-PCA",
+                "protocol": "P2_disjoint",
+                "seed": 0,
+                "dataset": "yaleb",
+                "data_modality": "real",
+                "ms_per_probe": float("nan"),
+                "eer": 0.4,
+                "auc": 0.6,
+            }
+        ]
+    )
     assert frame.loc[0, "chance_rank1"] == pytest.approx(1 / 23)
     assert frame.loc[0, "rank1_over_chance"] == pytest.approx(11.5)
     assert "Rank-1 / Chance" in render_t1(frame).columns

@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import numpy as np
 
-from ivafr.datasets.toy import TOY_CANONICAL_5PT, _render_face, _FaceParams
+from ivafr.datasets.toy import _render_face, _FaceParams
 from ivafr.preprocess.align2d import TEMPLATE_112, align_to_template, similarity_transform
 from ivafr.preprocess.detect import detect_face
 from ivafr.preprocess.illum import normalize_illum
 
 
 def _params() -> _FaceParams:
-    return _FaceParams(head_w=46, head_h=52, nose_scale=11, nose_len=0.7, brow_scale=2.5, cheek_scale=1.2, albedo=0.7)
+    return _FaceParams(
+        head_w=46,
+        head_h=52,
+        nose_scale=11,
+        nose_len=0.7,
+        brow_scale=2.5,
+        cheek_scale=1.2,
+        albedo=0.7,
+    )
 
 
 def test_similarity_transform_exact():
@@ -80,6 +88,7 @@ def test_cache_mark_and_hit(tmp_path):
     out = tmp_path / "x.npy"
     cfg = {"illum": {"method": "none"}}
     assert not cache.is_cached(out, cfg, "d1")
+    np.save(out, np.ones((4, 4), dtype=np.float32))
     cache.mark_cached(out, cfg, "d1")
     assert cache.is_cached(out, cfg, "d1")
     assert not cache.is_cached(out, cfg, "d2")  # input changed

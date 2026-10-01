@@ -74,9 +74,11 @@ def _model_z(gx: np.ndarray, gy: np.ndarray, p: _FaceParams) -> np.ndarray:
         np.sqrt(np.maximum(1.0 - x1 * x1 - y1 * y1, 0.0)),
         -1.0,
     )
-    nose = p.nose_scale * np.exp(
-        -((gx / 26.0) ** 2) - (((gy + 6.0) / 30.0) ** 2)
-    ) * np.exp(-p.nose_len * 0.03)
+    nose = (
+        p.nose_scale
+        * np.exp(-((gx / 26.0) ** 2) - (((gy + 6.0) / 30.0) ** 2))
+        * np.exp(-p.nose_len * 0.03)
+    )
     brow = p.brow_scale * (
         np.exp(-(((gx - 22.0) / 14.0) ** 2) - (((gy + 26.0) / 9.0) ** 2))
         + np.exp(-(((gx + 22.0) / 14.0) ** 2) - (((gy + 26.0) / 9.0) ** 2))
@@ -147,7 +149,9 @@ def _render_face(
 
     valid = ~np.isnan(z_model)
     depth = np.full((h, w), np.nan, dtype=np.float32)
-    depth[valid] = lz[valid]
+    # Each synthetic observation includes small, seeded sensor noise. Lighting
+    # variants must not reuse an identical depth file as both gallery and probe.
+    depth[valid] = lz[valid] + rng.normal(0, 0.05, np.count_nonzero(valid))
 
     intensity = p.albedo * (ambient + (1.0 - ambient) * shade) * light[2]
     val = np.clip(intensity * 255.0 + spec * 255.0, 0, 255).astype(np.uint8)
@@ -199,7 +203,9 @@ def generate_toy(
         for m in range(n_samples):
             pose_name, yaw, pitch = POSES[m % len(POSES)]
             light_name, az, el, lv = LIGHTS[m % len(LIGHTS)]
-            rgb, depth, land2d = _render_face(size, p, yaw, pitch, (az, el, lv), seed + s * 1000 + m)
+            rgb, depth, land2d = _render_face(
+                size, p, yaw, pitch, (az, el, lv), seed + s * 1000 + m
+            )
             sid = f"S{s + 1:03d}_{m:02d}"
             cv2.imwrite(str(subj_dir / f"{sid}.png"), rgb)
             np.save(subj_dir / f"{sid}_depth.npy", depth)

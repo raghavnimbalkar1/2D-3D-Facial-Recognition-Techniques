@@ -1,72 +1,74 @@
-# ivafr Makefile — self-contained: every target resolves its own .venv (Python 3.11).
+# Linux/macOS convenience targets; PowerShell equivalents are in README.
+PYTHON ?= python3.12
 PY := .venv/bin/python
 IVAFR := .venv/bin/ivafr
-PYTEST := .venv/bin/pytest
-UV := $(shell command -v uv 2>/dev/null)
+DATA ?= data
+RESULTS ?= results/toy-current
+TUFTS_RESULTS ?= results/tufts-current
 
-.PHONY: setup setup-full toy ingest preprocess splits run aggregate robustness timing all test lint fmt
+.PHONY: setup setup-full toy ingest preprocess splits run verify aggregate all test lint fmt tufts-ingest tufts-preprocess tufts-splits tufts-run tufts-verify tufts-all
 
 .venv/bin/python:
-	@if [ -n "$(UV)" ]; then \
-		uv venv --python 3.11 .venv && uv pip install -e '.[dev]'; \
-	else \
-		python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'; \
-	fi
+	$(PYTHON) -m venv .venv
 
 setup: .venv/bin/python
-	$(PY) -c "import sys; assert sys.version_info[:2] == (3, 11), sys.version"
-	$(UV) pip freeze > docs/env_lockfile.txt || .venv/bin/pip freeze > docs/env_lockfile.txt
+	$(PY) -m pip install -r docs/env_lockfile.txt
+	$(PY) -m pip install --no-deps --no-build-isolation -e .
+	$(PY) -m pip check
 
 setup-full: setup
-	$(UV) pip install -e '.[full,deep2d]' || .venv/bin/pip install -e '.[full,deep2d]'
-	$(UV) pip freeze > docs/env_lockfile.txt || .venv/bin/pip freeze > docs/env_lockfile.txt
+	$(PY) -m pip install -e '.[full,deep2d]'
 
 toy: .venv/bin/python
-	$(IVAFR) dataset-build --name toy --data-root data
+	$(IVAFR) dataset-build --name toy --data-root $(DATA)
 
 ingest: toy
-	$(IVAFR) ingest --dataset toy --data-root data
+	$(IVAFR) ingest --dataset toy --data-root $(DATA)
 
 preprocess: ingest
-	$(IVAFR) preprocess --dataset toy --data-root data --modality both
+	$(IVAFR) preprocess --dataset toy --data-root $(DATA) --modality both
 
 splits: preprocess
-	$(IVAFR) splits --dataset toy --data-root data --protocol P1_closed --protocol P2_disjoint --seeds 0 --seeds 1 --seeds 2 --seeds 3 --seeds 4
+	$(IVAFR) splits --dataset toy --data-root $(DATA) --modality both
 
 run: splits
-	$(IVAFR) run --exp E00 --data-root data --results-root results
+	$(IVAFR) run --exp E00 --data-root $(DATA) --results-root $(RESULTS)
 
-aggregate: run
-	$(IVAFR) aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
+verify: run
+	$(PY) scripts/verify_no_leakage.py --data-root $(DATA)
+	$(PY) scripts/verify_experiment.py --exp E00 --data-root $(DATA) --results-root $(RESULTS)
 
-robustness: aggregate
-	$(IVAFR) robustness --exp E00 --results-root results
+aggregate: verify
+	$(IVAFR) aggregate --results-root $(RESULTS) --out $(RESULTS)
 
-timing: aggregate
-	$(IVAFR) timing --exp E00 --results-root results
-
-all: aggregate robustness timing
+all: aggregate
 
 tufts-ingest: .venv/bin/python
-	$(IVAFR) ingest --dataset tufts3d --data-root data
+	$(IVAFR) ingest --dataset tufts3d --data-root $(DATA)
 
 tufts-preprocess: tufts-ingest
-	$(IVAFR) preprocess --dataset tufts3d --data-root data --modality both
+	$(IVAFR) preprocess --dataset tufts3d --data-root $(DATA) --modality 2d
 
 tufts-splits: tufts-preprocess
-	$(IVAFR) splits --dataset tufts3d --data-root data --protocol P1_closed --protocol P2_disjoint --seeds 0 --seeds 1 --seeds 2 --seeds 3 --seeds 4
+	$(IVAFR) splits --dataset tufts3d --data-root $(DATA) --modality 2d
 
 tufts-run: tufts-splits
-	$(IVAFR) run --exp E11 --exp E12 --exp E13 --data-root data --results-root results
+	$(IVAFR) run --exp E11 --exp E14 --data-root $(DATA) --results-root $(TUFTS_RESULTS)
 
-tufts-all: tufts-run
-	$(IVAFR) aggregate --results-root results --out results --preamble docs/RESULTS_PREAMBLE.md
+tufts-verify: tufts-run
+	$(PY) scripts/verify_no_leakage.py --data-root $(DATA)
+	$(PY) scripts/verify_experiment.py --exp E11 --data-root $(DATA) --results-root $(TUFTS_RESULTS)
+	$(PY) scripts/verify_experiment.py --exp E14 --data-root $(DATA) --results-root $(TUFTS_RESULTS)
+
+tufts-all: tufts-verify
+	$(IVAFR) robustness --exp E14 --results-root $(TUFTS_RESULTS)
+	$(IVAFR) aggregate --results-root $(TUFTS_RESULTS) --out $(TUFTS_RESULTS)
 
 test:
-	$(PYTEST)
+	$(PY) -m pytest
 
 lint:
-	$(UV) run ruff check src tests || ruff check src tests
+	$(PY) -m ruff check --select E9,F821,F822,F823 src tests scripts
 
 fmt:
-	$(UV) run black src tests || black src tests
+	$(PY) -m black src tests scripts

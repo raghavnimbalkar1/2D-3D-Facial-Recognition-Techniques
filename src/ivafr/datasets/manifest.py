@@ -26,6 +26,7 @@ import pandas as pd
 
 from ivafr.datasets.base import Sample
 from ivafr.logging_utils import get_logger
+from ivafr.integrity import file_hash
 
 log = get_logger("datasets.manifest")
 
@@ -115,6 +116,17 @@ def samples_to_manifest(samples: list[Sample]) -> pd.DataFrame:
             }
         )
     df = pd.DataFrame(rows, columns=MANIFEST_COLUMNS)
+    df["capture_id"] = [str(s.meta.get("capture_id", s.sample_id)) for s in samples]
+    df["geometry_units"] = [str(s.meta.get("geometry_units", "unknown")) for s in samples]
+    for modality in ("2d", "3d"):
+        df[f"content_hash_{modality}"] = [
+            (
+                file_hash(path)
+                if (path := getattr(s, f"path_{modality}")) is not None and path.is_file()
+                else ""
+            )
+            for s in samples
+        ]
     validate_manifest(df)
     return df
 
@@ -126,6 +138,11 @@ def validate_manifest(df: pd.DataFrame) -> None:
         raise ValueError(f"Manifest missing columns: {missing_cols}")
     if df["sample_id"].isna().any() or (df["sample_id"].astype(str).str.strip() == "").any():
         raise ValueError("sample_id must never be blank")
+    if df["sample_id"].duplicated().any():
+        raise ValueError("sample_id must be unique")
+    for flag in ("has_2d", "has_3d", "detect_ok", "align_ok", "nosetip_ok"):
+        if not df[flag].isin([True, False]).all():
+            raise ValueError(f"{flag} must contain booleans")
     bad_ids = df.loc[~df["subject_id"].str.fullmatch(r"S\d{3,}"), "subject_id"].unique()
     if len(bad_ids):
         raise ValueError(f"subject_id must be zero-padded canonical (S001...): {bad_ids}")
@@ -150,7 +167,9 @@ def write_manifest(df: pd.DataFrame, path: str | Path) -> None:
     """Persist a validated manifest to CSV."""
     validate_manifest(df)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False)
+    from ivafr.integrity import atomic_bytes
+
+    atomic_bytes(Path(path), df.to_csv(index=False).encode("utf-8"))
     log.info("Manifest written: %s (%d rows)", path, len(df))
 
 
@@ -160,7 +179,8 @@ def read_manifest(path: str | Path) -> pd.DataFrame:
     # Upgrade manifests written before v2 without changing their row data.
     if "data_modality" not in df.columns:
         df["data_modality"] = np.where(df["dataset"].eq("toy"), "synthetic_toy", "real")
-        df = df[[*MANIFEST_COLUMNS]]
+    if "capture_id" not in df:
+        df["capture_id"] = df["sample_id"]
     validate_manifest(df)
     return df
 
@@ -174,15 +194,8 @@ def audit(df: pd.DataFrame) -> ManifestStats:
     per_subject = df.groupby("subject_id").size()
     if per_subject.min() < 2:
         offenders = per_subject[per_subject < 2].index.tolist()
-        raise ValueError(
-            f"Subjects with <2 samples (cannot form genuine pairs): {offenders}"
-        )
-    cond = (
-        df.groupby(["pose_yaw", "illumination"], dropna=False)
-        .size()
-        .rename("n")
-        .reset_index()
-    )
+        raise ValueError(f"Subjects with <2 samples (cannot form genuine pairs): {offenders}")
+    cond = df.groupby(["pose_yaw", "illumination"], dropna=False).size().rename("n").reset_index()
     return ManifestStats(
         n_subjects=len(per_subject),
         n_samples=len(df),

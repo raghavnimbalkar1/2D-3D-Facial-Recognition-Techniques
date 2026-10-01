@@ -1,3 +1,5 @@
+> Historical snapshot. Current implementation and acceptance status: [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md). Earlier completion counts and running-process claims below are not current evidence. The real 3D protocol requires independent repeated captures.
+
 # Project Progress
 
 **Snapshot date:** 2026-08-18 (mid-batch)

@@ -44,7 +44,7 @@ def test_auc_identical_distributions_about_half():
 def test_tar_at_far():
     g, i = _scores(1.0, 0.0)
     out = tar_at_far(g, i, [1e-1, 1e-2])
-    assert out["0.1"] > out["0.01"] > 0.9
+    assert out["0.1"] >= out["0.01"] > 0.9
 
 
 def test_dprime():

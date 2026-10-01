@@ -1,0 +1,16 @@
+id: E14
+name: tufts_2d_occlusion
+dataset: tufts3d
+protocols: [P2_disjoint]
+seeds: [0, 1, 2, 3, 4]
+arms:
+  - {key: 2D-PCA, feature: pca, matcher: nn_cosine}
+  - {key: 2D-LBP, feature: lbp, matcher: nn_chi2}
+  - {key: 2D-HOG, feature: hog, matcher: nn_cosine}
+  - {key: 2D-Gabor, feature: gabor, matcher: nn_cosine}
+robustness:
+  type: probe_only_synthetic_occlusion
+  conditions:
+    - {name: sunglasses_20, kind: sunglasses, fraction: 0.20}
+    - {name: block_20, kind: block, fraction: 0.20}
+    - {name: block_40, kind: block, fraction: 0.40}

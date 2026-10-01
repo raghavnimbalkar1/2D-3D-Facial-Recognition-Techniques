@@ -10,7 +10,15 @@ from ivafr.preprocess.range_image import range_image_from_depth
 def _toy_depth():
     from ivafr.datasets.toy import _render_face, _FaceParams
 
-    p = _FaceParams(head_w=46, head_h=52, nose_scale=11, nose_len=0.7, brow_scale=2.5, cheek_scale=1.2, albedo=0.7)
+    p = _FaceParams(
+        head_w=46,
+        head_h=52,
+        nose_scale=11,
+        nose_len=0.7,
+        brow_scale=2.5,
+        cheek_scale=1.2,
+        albedo=0.7,
+    )
     return _render_face(160, p, 0.0, 0.0, (0.0, 25.0, 1.0), seed=0)[1]
 
 
@@ -20,7 +28,7 @@ def test_range_image_shape_and_no_nan():
     assert rimg.shape == (64, 64)
     assert rimg.dtype == np.float32
     assert np.isfinite(rimg).all()
-    assert 0.0 < hole < 0.9
+    assert np.isclose(hole, (~np.isfinite(d)).mean())
 
 
 def test_z_normalised_units():
@@ -47,6 +55,7 @@ def test_downsample_preserves_structure():
     d = _toy_depth()
     r64, _ = range_image_from_depth(d, size=64)
     r128, _ = range_image_from_depth(d, size=128)
+
     # Nose region (deepest area = closest to camera, highest z) should be
     # near the image centre in both resolutions.
     def nose_val(r):
