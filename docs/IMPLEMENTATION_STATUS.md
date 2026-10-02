@@ -27,8 +27,13 @@ Validated on Windows with Python 3.12.14:
 - E11 certification correctly exits nonzero because the Tufts manifest/data
   is absent. No new real-data accuracy or completed E11 claim is made.
 
-Remote CI has not been run from this checkout; its six platform/Python
-combinations are configured for the next push or pull request.
+The first remote run of commit `23c8cde` passed on five platform/Python
+combinations. Windows/Python 3.12 stopped at `pip check` because the runner's
+preinstalled `pipx` required newer `packaging` and `platformdirs` versions
+than the project lockfile. No tests ran on that job. The 2026-10-02 workflow
+correction creates an isolated virtual environment for every matrix entry,
+keeps the lockfile unchanged, uses Node 24 actions and pins Ubuntu to 24.04.
+The corrected run's final outcome is available in GitHub Actions.
 
 ## Architecture
 
