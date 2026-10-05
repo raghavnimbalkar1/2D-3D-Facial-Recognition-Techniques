@@ -40,6 +40,20 @@ def toy_pipeline_dir(toy_raw: Path):
     ingest("toy", root)
     resolver = ConfigResolver(Path(__file__).parents[1] / "configs")
     preprocess_dataset(
-        "toy", root, resolver.preprocess_config("p2d_default"), resolver.preprocess_config("p3d_default")
+        "toy",
+        root,
+        resolver.preprocess_config("p2d_default"),
+        resolver.preprocess_config("p3d_default"),
+    )
+    from ivafr.datasets.manifest import read_manifest
+    from ivafr.datasets.splits import prepare_splits
+
+    manifest = read_manifest(root / "processed/toy/manifest.csv")
+    prepare_splits(
+        manifest,
+        root / "processed/toy/splits",
+        ["2d", "3d"],
+        ["P1_closed", "P2_disjoint"],
+        list(range(5)),
     )
     return root

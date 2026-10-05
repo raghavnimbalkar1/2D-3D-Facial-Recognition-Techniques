@@ -3,6 +3,13 @@ name: 2d_baselines_tufts
 dataset: tufts3d
 protocols: [P1_closed, P2_disjoint]
 seeds: [0, 1, 2, 3, 4]
+evaluate:
+  identification: true
+  verification: true
+  timing: true
+timing:
+  repeats: 5
+  warmups: 1
 arms:
   - {key: 2D-PCA, feature: pca, matcher: nn_cosine}
   - {key: 2D-LBP, feature: lbp, matcher: nn_chi2}

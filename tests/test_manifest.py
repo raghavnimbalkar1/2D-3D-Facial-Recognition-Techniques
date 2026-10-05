@@ -13,7 +13,10 @@ from ivafr.datasets.manifest import (
 
 
 def test_schema_complete(toy_manifest):
-    assert list(toy_manifest.columns) == MANIFEST_COLUMNS
+    assert list(toy_manifest.columns[: len(MANIFEST_COLUMNS)]) == MANIFEST_COLUMNS
+    assert {"capture_id", "geometry_units", "content_hash_2d", "content_hash_3d"} <= set(
+        toy_manifest.columns
+    )
     assert len(toy_manifest) == 48  # 4 subjects x 12 samples
 
 

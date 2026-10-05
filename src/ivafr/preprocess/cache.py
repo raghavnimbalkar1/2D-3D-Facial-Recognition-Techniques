@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from ivafr.integrity import file_hash, atomic_json
 
 _SIDECAR = ".ivafr_cache.json"
 
@@ -26,8 +27,7 @@ def cfg_hash(cfg: dict[str, Any]) -> str:
 
 def file_digest(path: str | Path) -> str:
     """Digest of a file's identity: size + mtime_ns (cheap, stable)."""
-    st = Path(path).stat()
-    return hashlib.sha256(f"{st.st_size}:{st.st_mtime_ns}".encode()).hexdigest()[:16]
+    return file_hash(path)
 
 
 def is_cached(out_path: str | Path, cfg: dict[str, Any], input_digest: str) -> bool:
@@ -40,19 +40,21 @@ def is_cached(out_path: str | Path, cfg: dict[str, Any], input_digest: str) -> b
         meta = json.loads(sidecar.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return False
-    return meta.get("cfg_hash") == cfg_hash(cfg) and meta.get("input_digest") == input_digest
+    return (
+        meta.get("cfg_hash") == cfg_hash(cfg)
+        and meta.get("input_digest") == input_digest
+        and meta.get("output_digest") == file_hash(out)
+        and out.stat().st_size > 0
+    )
 
 
 def mark_cached(out_path: str | Path, cfg: dict[str, Any], input_digest: str) -> None:
     """Write the sidecar marking ``out_path`` as up-to-date."""
     out = Path(out_path)
-    # The marker is also useful as a lightweight cache contract in tests and
-    # dry runs where the producer has no materialised payload yet.
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if not out.exists():
-        out.touch()
+    if not out.is_file() or out.stat().st_size == 0:
+        raise ValueError(f"Cannot cache an absent or empty payload: {out}")
     sidecar = out.with_name(out.name + _SIDECAR)
-    sidecar.write_text(
-        json.dumps({"cfg_hash": cfg_hash(cfg), "input_digest": input_digest}),
-        encoding="utf-8",
+    atomic_json(
+        sidecar,
+        {"cfg_hash": cfg_hash(cfg), "input_digest": input_digest, "output_digest": file_hash(out)},
     )

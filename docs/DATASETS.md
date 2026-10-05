@@ -3,8 +3,10 @@
 ## Toy
 
 The toy adapter generates deterministic ellipsoid-plus-bump faces with a
-Lambertian image, exact depth map, and sidecar landmarks. It is the CI and
-development dataset.
+Lambertian image, synthetic depth observation, and sidecar landmarks. Depth
+contains deterministic 0.05-unit simulated sensor noise per observation so
+lighting variants do not share identical depth files. It is the CI and
+development dataset, not evidence about independently acquired real faces.
 
 ## Extended Yale Face Database B
 
@@ -48,9 +50,14 @@ Decision (2026-08-18): the 3D data source for the real-data phase is Tufts.
 - **Terms**: non-commercial research/educational use only; redistribution to
   third parties prohibited; publications must cite the TD-FD paper
   (Panetta et al., TPAMI 2018) and the website. See `docs/ETHICS.md`.
-- **Planned adapter** (`ivafr.datasets.tufts3d`): discover PLY meshes
-  (`TD_3D_<n>.ply`) plus matched TD_RGB_E photos by participant number,
-  subject ids canonicalised to `Sxxx`; 3D loader parses PLY via `plyfile`
-  (full extras) into `Cloud3D`; per-scan `n_points` and quality flags fill
-  the manifest. Blocked until data is downloaded and inspection confirms the
-  mesh origin/scale convention.
+- **Implemented adapter** (`ivafr.datasets.tufts3d`): discovers ASCII PLY
+  meshes and photos by participant number, canonicalizes IDs to `Sxxx`,
+  validates vertex properties and records actual point counts. No `plyfile`
+  extra is required. Photo-only input is supported; if meshes are present,
+  the historical mesh-matched photo cohort is retained. `ingestion.json`
+  records the selected cohort and excluded photo subjects. Source content
+  hashes and per-modality rejection reasons are recorded in the manifest.
+- **Current protocol gate:** one mesh per subject is insufficient for
+  independent gallery/probe 3D recognition. E12/E13 are blocked by design,
+  even when downloading and projection succeed. Real mesh orientation and
+  metric scale have not been certified. See [current status](IMPLEMENTATION_STATUS.md).

@@ -76,3 +76,31 @@ provides 5 expression captures (neutral, smile, eyes_closed, shocked, sunglasses
 The 3D preprocessing chain projects meshes to standardized depth range images,
 surface normals, and curvature channels. This enables direct 2D appearance vs 3D
 geometry comparison on real data.
+
+## 2026-10-01 — Independent captures and verifiable completion
+
+The earlier Tufts pivot established a mesh-processing path, but did not
+establish a valid recognition protocol: TD_3D supplies only one mesh per
+subject. E12/E13 now fail before fitting when independent gallery/probe
+captures cannot be formed. A transformed mesh or a photo-derived depth map
+cannot be counted as another real acquisition. Real comparison needs a
+repeated-capture source and validation of its geometry conventions.
+
+Runs now consume persisted, modality-specific splits and fingerprint the
+resolved configuration, eligible manifest, raw/cache content, source code,
+Python and dependency versions. A checksummed completion marker covers all
+artifacts. Resume requires an exact identity match. Aggregation rejects
+partial, duplicate and incompatible runs instead of choosing the newest one.
+Use a fresh results root when inputs or code change.
+
+Verification operating points enforce the requested empirical FAR budget
+with tied scores, expose achieved FAR/resolution, and are explicitly
+descriptive rather than calibrated for deployment. EER intervals use shared
+subject-cluster resampling. P1's gallery is fixed; seed variation is not
+independent identification replication. Timing measures repeated warmed
+feature and matching stages separately from artifact generation.
+
+The toy generator adds seeded 0.05-unit depth observation noise to avoid
+byte-identical lighting variants. This remains synthetic methodology data.
+The historical real-data summaries are retained but require recertification
+against the strengthened rules; see [implementation status](IMPLEMENTATION_STATUS.md).

@@ -14,7 +14,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 
 
-def eer(genuine: np.ndarray, impostor: np.ndarray) -> tuple[float, float]:
+def eer(genuine: np.ndarray, impostor: np.ndarray, weights=None) -> tuple[float, float]:
     """Equal Error Rate via linear interpolation at the FAR/FRR crossing.
 
     Args:
@@ -30,7 +30,9 @@ def eer(genuine: np.ndarray, impostor: np.ndarray) -> tuple[float, float]:
         raise ValueError("eer() needs non-empty genuine and impostor arrays")
     y = np.r_[np.ones_like(g), np.zeros_like(i)]
     s = np.r_[g, i]
-    fpr, tpr, thr = roc_curve(y, s)
+    if not np.isfinite(s).all():
+        raise ValueError("Verification scores must be finite")
+    fpr, tpr, thr = roc_curve(y, s, sample_weight=weights)
     frr = 1.0 - tpr
     d = fpr - frr
     crossings = np.where(np.diff(np.sign(d)))[0]
@@ -48,25 +50,70 @@ def eer(genuine: np.ndarray, impostor: np.ndarray) -> tuple[float, float]:
     return float(eer_val), float(eer_thr)
 
 
-def tar_at_far(genuine: np.ndarray, impostor: np.ndarray, far_levels: list[float]) -> dict[str, float]:
+def tar_at_far(
+    genuine: np.ndarray, impostor: np.ndarray, far_levels: list[float]
+) -> dict[str, float]:
     """TAR (recall) at fixed FAR levels, e.g. {1e-1, 1e-2, 1e-3}."""
-    g = np.asarray(genuine, dtype=np.float64)
-    i = np.asarray(impostor, dtype=np.float64)
-    out: dict[str, float] = {}
+    return {
+        key: point["tar"] for key, point in operating_points(genuine, impostor, far_levels).items()
+    }
+
+
+def operating_points(genuine, impostor, far_levels) -> dict:
+    """Descriptive evaluation-set operating points, not calibrated deployment thresholds.
+
+    Accept similarity >= threshold. A tied block is accepted only when its
+    complete false-accept count fits the requested empirical FAR budget.
+    """
+    g, i = np.asarray(genuine, dtype=float), np.asarray(impostor, dtype=float)
+    if not len(g) or not len(i) or not np.isfinite(np.r_[g, i]).all():
+        raise ValueError("Operating points require finite, nonempty scores")
+    values = np.unique(np.r_[g, i])
+    accepted = len(i) - np.searchsorted(np.sort(i), values, side="left")
+    out = {}
     for far in far_levels:
-        # Use an order-statistic threshold and a deterministic tie-break for
-        # small discrete impostor sets.
-        if not i.size:
-            tar = 0.0
-        else:
-            ordered = np.sort(i)[::-1]
-            idx = min(len(ordered) - 1, max(0, int(np.ceil(far * len(ordered))) - 1))
-            thr = float(ordered[idx])
-            tar = float((g >= thr).mean())
-            if far < max(far_levels) and tar == 1.0:
-                tar = float(np.nextafter(tar, 0.0))
-        out[f"{far:g}"] = tar
+        if not 0 <= far <= 1:
+            raise ValueError("FAR must be in [0,1]")
+        allowed = int(np.floor(float(far) * len(i)))
+        feasible = np.flatnonzero(accepted <= allowed)
+        threshold = (
+            float(values[feasible[0]]) if len(feasible) else float(np.nextafter(values[-1], np.inf))
+        )
+        out[f"{far:g}"] = {
+            "tar": float(np.mean(g >= threshold)),
+            "achieved_far": float(np.mean(i >= threshold)),
+            "threshold": threshold,
+            "far_resolution": 1.0 / len(i),
+            "below_resolution": 0 < far < 1.0 / len(i),
+            "threshold_source": "evaluation_roc_not_deployment_calibration",
+        }
     return out
+
+
+def subject_bootstrap_ci(genuine, impostor, genuine_subjects, impostor_subjects, n=1000, seed=0):
+    """Identity-cluster bootstrap with shared subject weights for both pair sets."""
+    gp = np.asarray(genuine_subjects)
+    ip = np.asarray(impostor_subjects)
+    subjects = np.unique(np.r_[gp.ravel(), ip.ravel()])
+    if len(subjects) < 2 or n < 2 or len(gp) != len(genuine) or len(ip) != len(impostor):
+        raise ValueError("Cluster CI requires matching pair identities, >=2 subjects and resamples")
+    index = {s: k for k, s in enumerate(subjects)}
+    gi = np.array([index[a] for a, _ in gp])
+    ia = np.array([index[a] for a, _ in ip])
+    ib = np.array([index[b] for _, b in ip])
+    rng = np.random.default_rng(seed)
+    values = []
+    for _ in range(n * 20):
+        weights = rng.multinomial(len(subjects), np.full(len(subjects), 1 / len(subjects)))
+        gw, iw = weights[gi], weights[ia] * weights[ib]
+        if not gw.any() or not iw.any():
+            continue
+        values.append(eer(genuine, impostor, np.r_[gw, iw])[0])
+        if len(values) == n:
+            break
+    if len(values) != n:
+        raise ValueError("Insufficient valid identity bootstrap replicates")
+    return np.percentile(values, [2.5, 97.5]).astype(float).tolist()
 
 
 def dprime(genuine: np.ndarray, impostor: np.ndarray) -> float:
@@ -133,6 +180,8 @@ class VerificationResult:
     det_frr: np.ndarray = field(repr=False)
     far_frr_thr: np.ndarray = field(repr=False)
     far_frr: np.ndarray = field(repr=False)
+    operating_points: dict = field(default_factory=dict)
+    ci_method: str = "pair_bootstrap"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -145,11 +194,18 @@ class VerificationResult:
             "impostor": {"mean": self.impostor_mean, "std": self.impostor_std},
             "n_genuine": self.n_genuine,
             "n_impostor": self.n_impostor,
+            "operating_points": self.operating_points,
+            "ci_method": self.ci_method,
         }
 
 
 def evaluate_verification(
-    genuine: np.ndarray, impostor: np.ndarray, seed: int = 0, n_boot: int = 1000
+    genuine: np.ndarray,
+    impostor: np.ndarray,
+    seed: int = 0,
+    n_boot: int = 1000,
+    genuine_subjects=None,
+    impostor_subjects=None,
 ) -> VerificationResult:
     """Full verification evaluation from genuine/impostor similarity scores."""
     g = np.asarray(genuine, dtype=np.float64)
@@ -165,9 +221,15 @@ def evaluate_verification(
     far_curve = fpr[order]
     frr_curve = frr[order]
     thr_curve = thr[order]
+    clustered = genuine_subjects is not None and impostor_subjects is not None
+    ci = (
+        subject_bootstrap_ci(g, i, genuine_subjects, impostor_subjects, n_boot, seed)
+        if clustered
+        else bootstrap_ci(g, i, "eer", n=n_boot, seed=seed)
+    )
     return VerificationResult(
         eer=ee,
-        eer_ci95=bootstrap_ci(g, i, "eer", n=n_boot, seed=seed),
+        eer_ci95=ci,
         auc=float(roc_auc_score(y, s)),
         # Retain a conservative 1e-3 operating point for backwards-compatible
         # JSON consumers; the headline Yale table reports only 1e-1 and 1e-2
@@ -186,4 +248,6 @@ def evaluate_verification(
         det_frr=frr,
         far_frr_thr=thr_curve,
         far_frr=np.stack([far_curve, frr_curve], axis=0),
+        operating_points=operating_points(g, i, [1e-1, 1e-2, 1e-3]),
+        ci_method="subject_cluster_bootstrap" if clustered else "pair_bootstrap",
     )

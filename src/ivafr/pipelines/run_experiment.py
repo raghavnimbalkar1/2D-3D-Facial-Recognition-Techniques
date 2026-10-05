@@ -22,9 +22,6 @@ import numpy as np
 import pandas as pd
 
 from ivafr.config import ArmConfig, ExperimentConfig
-from ivafr.datasets.manifest import read_manifest
-from ivafr.datasets.splits import make_split
-from ivafr.datasets.splits import summary as split_summary
 from ivafr.evaluation.identification import evaluate_identification
 from ivafr.evaluation.verification import evaluate_verification
 from ivafr.logging_utils import get_logger
@@ -39,9 +36,18 @@ from ivafr.viz import style as viz_style
 log = get_logger("pipelines.run_experiment")
 
 _ARM_MODALITY = {
-    "pca": "2d", "lda": "2d", "lbp": "2d", "hog": "2d", "gabor": "2d", "arcface": "2d",
-    "depth_pca": "3d", "depth_lbp": "3d", "normal_hog": "3d", "curv_hist": "3d",
-    "lmk3d": "3d", "icp": "3d",
+    "pca": "2d",
+    "lda": "2d",
+    "lbp": "2d",
+    "hog": "2d",
+    "gabor": "2d",
+    "arcface": "2d",
+    "depth_pca": "3d",
+    "depth_lbp": "3d",
+    "normal_hog": "3d",
+    "curv_hist": "3d",
+    "lmk3d": "3d",
+    "icp": "3d",
 }
 
 
@@ -70,7 +76,7 @@ def _condition_of(manifest: pd.DataFrame) -> dict[str, str]:
         illum = str(row["illumination"])
         yaw = row["pose_yaw"]
         yaw_s = f"{float(yaw):+.0f}" if str(yaw) != "NA" else "NA"
-        return f"yaw{yaw_s}_{illum}"
+        return f"yaw{yaw_s}_{illum}_expression:{row.get('expression', 'NA')}_occlusion:{row.get('occlusion', 'NA')}"
 
     return {str(row["sample_id"]): cond(row) for _, row in manifest.iterrows()}
 
@@ -84,95 +90,104 @@ def run_experiment(
     protocols: list[str] | None = None,
     arms: list[str] | None = None,
 ) -> list[Path]:
-    """Execute one experiment config; returns the created run directories."""
-    data_root = Path(data_root)
-    results_root = Path(results_root)
-    manifest = read_manifest(data_root / "processed" / exp.dataset / "manifest.csv")
-    # A paired dataset such as Tufts contains both one 3D mesh and several 2D
-    # photos per subject.  Single-modality experiments must build their splits
-    # from the corresponding sample pool; otherwise a 2D arm can accidentally
-    # select the mesh as its gallery sample (and vice versa).
-    requested_modalities = {_ARM_MODALITY.get(arm.feature, "2d") for arm in exp.arms}
-    if len(requested_modalities) == 1:
-        requested = next(iter(requested_modalities))
-        column = "has_2d" if requested == "2d" else "has_3d"
-        manifest = manifest.loc[manifest[column].astype(bool)].reset_index(drop=True)
-        if manifest.empty:
-            raise ValueError(f"No samples available for {requested} experiment {exp.id}")
-    modalities = set(manifest["data_modality"].astype(str))
-    if len(modalities) != 1:
-        raise ValueError(f"One experiment cannot mix data modalities: {sorted(modalities)}")
-    data_modality = next(iter(modalities))
-    subject_of = _subject_of(manifest)
-    condition_of = _condition_of(manifest)
-    interim = data_root / "interim" / exp.dataset
+    """Execute only audited, persisted splits; publish complete runs atomically."""
+    from ivafr.datasets.splits import load_experiment_split
+    from ivafr.integrity import atomic_json, digest
+    from ivafr.pipelines.provenance import experiment_inputs, run_identity, complete_run
 
-    run_dirs: list[Path] = []
-    for protocol in protocols or exp.protocols:
-        for seed in seeds or exp.seeds:
-            split = make_split(manifest, protocol, seed=seed)
-            log.info("Split: %s", split_summary(split))
-            pool_ids = _pool_ids(split, manifest)
-            train_ids = _train_ids(split, manifest)
-            for arm in exp.arms:
-                if arms and arm.key not in arms:
-                    continue
-                run_dir = _existing_run_dir(results_root, exp.id, protocol, seed, arm.key)
-                if run_dir is not None and not force:
-                    log.info("Skipping existing %s", run_dir)
-                    run_dirs.append(run_dir)
-                    continue
-                run_dir = _new_run_dir(results_root, exp.id, protocol, seed, arm.key)
-                metrics_path = run_dir / "metrics.json"
-                robustness_conditions = (
-                    exp.robustness.get("conditions", []) if exp.robustness else []
+    data_root, results_root = Path(data_root), Path(results_root)
+    selected_seeds = exp.seeds if seeds is None else seeds
+    selected_protocols = exp.protocols if protocols is None else protocols
+    selected_arms = [a for a in exp.arms if arms is None or a.key in arms]
+    if not selected_seeds or not set(selected_seeds) <= set(exp.seeds):
+        raise ValueError("Seeds must be a nonempty subset of the configured seeds")
+    if not selected_protocols or not set(selected_protocols) <= set(exp.protocols):
+        raise ValueError("Protocols must be a nonempty subset of the experiment")
+    if not selected_arms or (arms is not None and not set(arms) <= {a.key for a in exp.arms}):
+        raise ValueError("Unknown or empty arm selection")
+    inputs = experiment_inputs(exp, data_root)
+    work = []
+    # Preflight the entire requested matrix before creating any run artifacts.
+    for protocol in selected_protocols:
+        for seed in selected_seeds:
+            subject_partition = None
+            for arm in selected_arms:
+                modality = _ARM_MODALITY[arm.feature]
+                frame = inputs["frames"][modality]
+                split = load_experiment_split(
+                    data_root, exp.dataset, modality, protocol, seed, frame
                 )
-                evaluations = [("clean", None)] + [
-                    (str(c["name"]), c) for c in robustness_conditions
-                ]
-                condition_metrics = {}
-                metrics = None
-                for condition_name, augmentation in evaluations:
-                    current = _evaluate_arm(
-                        run_dir=run_dir,
-                        arm=arm,
-                        split=split,
-                        manifest=manifest,
-                        interim=interim,
-                        pool_ids=pool_ids,
-                        train_ids=train_ids,
-                        subject_of=subject_of,
-                        condition_of=condition_of,
-                        do_identification=exp.evaluate_identification,
-                        do_verification=exp.evaluate_verification,
-                        do_timing=exp.evaluate_timing,
-                        probe_augmentation=augmentation,
-                    )
-                    if metrics is None:
-                        metrics = current
-                    if condition_name != "clean":
-                        condition_metrics[condition_name] = {
-                            "rank1": current.get("identification", {}).get("rank1"),
-                            "n": current.get("identification", {}).get("n_probe", 0),
-                        }
-                assert metrics is not None
-                if condition_metrics:
-                    metrics["robustness"] = {
-                        "type": exp.robustness.get("type", "unknown"),
-                        "conditions": condition_metrics,
-                    }
-                    if "identification" in metrics:
-                        metrics["identification"]["per_condition"] = condition_metrics
-                _write_meta(run_dir, exp)
-                metrics["exp_id"] = exp.id
-                metrics["arm"] = arm.key
-                metrics["protocol"] = protocol
-                metrics["seed"] = seed
-                metrics["dataset"] = {"name": exp.dataset, "data_modality": data_modality}
-                metrics["data_modality"] = data_modality
-                metrics_path.write_text(json.dumps(metrics, indent=2, sort_keys=True))
-                run_dirs.append(run_dir)
-                log.info("Wrote %s", metrics_path)
+                partition = (split["train_subjects"], split["eval_subjects"])
+                if subject_partition is not None and partition != subject_partition:
+                    raise ValueError("Multimodal subject partitions disagree")
+                subject_partition = partition
+                work.append((arm, frame, split))
+    run_dirs = []
+    for arm, frame, split in work:
+        protocol, seed = split["protocol"], split["seed"]
+        provenance = run_identity(exp, arm, split, inputs)
+        run_id = digest(provenance)
+        directory = _existing_run_dir(results_root, exp.id, protocol, seed, arm.key, run_id)
+        if directory is not None and not force:
+            run_dirs.append(directory)
+            continue
+        directory = _new_run_dir(results_root, exp.id, protocol, seed, arm.key)
+        _write_meta(directory, exp)
+        atomic_json(directory / "split.json", split)
+        atomic_json(directory / "inputs.json", inputs["files"])
+        subject_of = _subject_of(frame)
+        metrics = None
+        robustness = {}
+        for name, augmentation in [("clean", None)] + [
+            (c["name"], c) for c in exp.robustness.get("conditions", [])
+        ]:
+            target = directory if name == "clean" else directory / "conditions" / name
+            target.mkdir(parents=True, exist_ok=True)
+            current = _evaluate_arm(
+                run_dir=target,
+                arm=arm,
+                split=split,
+                manifest=frame,
+                interim=data_root / "interim" / exp.dataset,
+                pool_ids=_pool_ids(split, frame),
+                train_ids=split["train_ids"],
+                subject_of=subject_of,
+                condition_of=_condition_of(frame),
+                do_identification=exp.evaluate_identification,
+                do_verification=exp.evaluate_verification,
+                do_timing=exp.evaluate_timing,
+                probe_augmentation=augmentation,
+                timing_repeats=exp.timing_repeats,
+                timing_warmups=exp.timing_warmups,
+                bootstrap_repeats=exp.bootstrap_repeats,
+            )
+            if name == "clean":
+                metrics = current
+            else:
+                atomic_json(target / "metrics.json", current)
+                robustness[name] = {
+                    "rank1": current.get("identification", {}).get("rank1"),
+                    "n": current.get("identification", {}).get("n_probe", 0),
+                }
+        if robustness:
+            metrics["robustness"] = {
+                "type": exp.robustness.get("type", "occlusion"),
+                "conditions": robustness,
+            }
+        metrics.update(
+            exp_id=exp.id,
+            arm=arm.key,
+            protocol=protocol,
+            seed=seed,
+            dataset={"name": exp.dataset, "data_modality": inputs["data_modality"]},
+            data_modality=inputs["data_modality"],
+            run_id=run_id,
+            provenance=provenance,
+        )
+        atomic_json(directory / "metrics.json", metrics)
+        complete_run(directory, run_id)
+        run_dirs.append(directory)
+        log.info("Completed %s", directory)
     return run_dirs
 
 
@@ -190,6 +205,9 @@ def _evaluate_arm(
     do_verification: bool,
     probe_augmentation: dict | None = None,
     do_timing: bool = False,
+    timing_repeats: int = 5,
+    timing_warmups: int = 1,
+    bootstrap_repeats: int = 1000,
 ) -> dict[str, Any]:
     """Extract -> match -> evaluate for one arm; returns metrics dict."""
     seed = int(split["seed"])
@@ -200,6 +218,7 @@ def _evaluate_arm(
     if modality == "3d" and dataset_name == "yaleb":
         raise ValueError("Pseudo-3D arms are restricted on Yale B due to environment block")
     gallery_ids, probe_ids = split["gallery_ids"], split["probe_ids"]
+    timing = {} if do_timing else None
 
     X_train, X_gallery, X_probe, *_ = extract_features(
         feature_name=arm.feature,
@@ -212,11 +231,24 @@ def _evaluate_arm(
         modality=modality,
         seed=seed,
         probe_augmentation=probe_augmentation,
+        timing=timing,
+        timing_repeats=timing_repeats,
+        timing_warmups=timing_warmups,
     )
 
-    matcher = get_matcher(arm.matcher)(arm.matcher_params).fit(X_train, np.asarray(train_ids))
-    metrics: dict[str, Any] = {"feature": {"name": arm.feature, "params": arm.feature_params},
-                               "matcher": {"name": arm.matcher, "params": arm.matcher_params}}
+    matcher = get_matcher(arm.matcher)(arm.matcher_params).fit(
+        X_train, np.asarray([subject_of[i] for i in train_ids])
+    )
+    if do_timing:
+        from ivafr.evaluation.timing import time_callable
+
+        timing["match"] = time_callable(
+            lambda: matcher.score_matrix(X_probe, X_gallery), timing_repeats, timing_warmups
+        )
+    metrics: dict[str, Any] = {
+        "feature": {"name": arm.feature, "params": arm.feature_params},
+        "matcher": {"name": arm.matcher, "params": arm.matcher_params},
+    }
 
     if do_identification:
         scores = matcher.score_matrix(X_probe, X_gallery)
@@ -235,7 +267,14 @@ def _evaluate_arm(
         X_pool = _pool_features(pool_ids, X_gallery, X_probe, gallery_ids, probe_ids)
         g_scores = matcher.scores_for_pairs(X_pool, gen)
         i_scores = matcher.scores_for_pairs(X_pool, imp)
-        ver = evaluate_verification(g_scores, i_scores, seed=seed)
+        ver = evaluate_verification(
+            g_scores,
+            i_scores,
+            seed=seed,
+            n_boot=bootstrap_repeats,
+            genuine_subjects=[(subject_of[a], subject_of[b]) for a, b in pairs["genuine"]],
+            impostor_subjects=[(subject_of[a], subject_of[b]) for a, b in pairs["impostor"]],
+        )
         metrics["verification"] = ver.as_dict()
         np.save(run_dir / "genuine_scores.npy", g_scores)
         np.save(run_dir / "impostor_scores.npy", i_scores)
@@ -243,11 +282,15 @@ def _evaluate_arm(
     if do_timing:
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         metrics["timing"] = {
-            "total_ms": float(elapsed_ms),
+            **timing,
+            "pipeline_total_ms": float(elapsed_ms),
             "train_samples": len(train_ids),
             "gallery_samples": len(gallery_ids),
             "probe_samples": len(probe_ids),
-            "ms_per_probe": float(elapsed_ms / max(len(probe_ids), 1)),
+            "ms_per_probe": float(
+                (timing["transform"]["median_ms"] + timing["match"]["median_ms"]) / len(probe_ids)
+            ),
+            "definition": "median probe transform + gallery matching; excludes fitting, IO, metrics and plots",
         }
     return metrics
 
@@ -262,9 +305,7 @@ def _pool_features(
     """Assemble the pool feature matrix in ``pool_ids`` order."""
     g_idx = {sid: i for i, sid in enumerate(gallery_ids)}
     p_idx = {sid: i for i, sid in enumerate(probe_ids)}
-    rows = [
-        X_gallery[g_idx[sid]] if sid in g_idx else X_probe[p_idx[sid]] for sid in pool_ids
-    ]
+    rows = [X_gallery[g_idx[sid]] if sid in g_idx else X_probe[p_idx[sid]] for sid in pool_ids]
     return np.stack(rows, axis=0).astype(np.float32)
 
 
@@ -274,6 +315,7 @@ def _artifacts_identification(run_dir: Path, arm_key: str, res) -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
     tbl_dir.mkdir(parents=True, exist_ok=True)
     viz_style.set_output_dir(fig_dir)
+    viz_plots.plot_cmc({arm_key: res.cmc})
     viz_cm.plot_cm(res.confusion, res.labels, f"fig_cm_{arm_key}")
     viz_cm.cm_csv(res.confusion, res.labels, tbl_dir / "cm.csv")
     per_class = pd.DataFrame(res.per_class).T.reset_index().rename(columns={"index": "subject"})
@@ -281,6 +323,8 @@ def _artifacts_identification(run_dir: Path, arm_key: str, res) -> None:
 
 
 def _artifacts_verification(run_dir: Path, arm_key: str, ver, g_scores, i_scores) -> None:
+    from sklearn.metrics import average_precision_score, precision_recall_curve
+
     fig_dir = run_dir / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
     viz_style.set_output_dir(fig_dir)
@@ -288,21 +332,33 @@ def _artifacts_verification(run_dir: Path, arm_key: str, ver, g_scores, i_scores
     viz_plots.plot_det({arm_key: (ver.det_far, ver.det_frr)})
     viz_plots.plot_far_frr({arm_key: (ver.far_frr_thr, ver.far_frr[0], ver.far_frr[1])})
     viz_plots.plot_score_hists({arm_key: (g_scores, i_scores)})
+    labels = np.r_[np.ones_like(g_scores), np.zeros_like(i_scores)]
+    scores = np.r_[g_scores, i_scores]
+    precision, recall, _ = precision_recall_curve(labels, scores)
+    viz_plots.plot_pr(
+        {arm_key: (precision, recall, float(average_precision_score(labels, scores)))}
+    )
 
 
 def _existing_run_dir(
-    results_root: Path, exp_id: str, protocol: str, seed: int, arm: str
+    results_root: Path, exp_id: str, protocol: str, seed: int, arm: str, run_id: str | None = None
 ) -> Path | None:
     """Most recent completed run dir for (exp, protocol, seed, arm), or None.
 
     Run dir names embed a UTC timestamp, so a naive ``is_file`` check on a
-    freshly generated name can never hit. Scan the runs tree instead, so
-    re-runs are idempotent: an existing ``metrics.json`` means skip.
+    freshly generated name can never hit. Scan the runs tree and reuse only
+    a checksummed completed bundle with the exact current run identity.
     """
     best: Path | None = None
     best_ts = ""
     for d in (results_root / "runs").glob(f"*_{exp_id}_{protocol}_s{seed}_{arm}"):
-        if not (d / "metrics.json").is_file():
+        from ivafr.pipelines.provenance import validate_run
+
+        try:
+            saved = validate_run(d)
+        except (OSError, ValueError, KeyError):
+            continue
+        if run_id is None or saved["run_id"] != run_id:
             continue
         ts = d.name.split("_", 1)[0]
         if best is None or ts > best_ts:

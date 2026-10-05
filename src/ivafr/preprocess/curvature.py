@@ -5,12 +5,14 @@ from __future__ import annotations
 import numpy as np
 
 
-def curvature_from_depth(depth: np.ndarray) -> np.ndarray:
+def curvature_from_depth(depth: np.ndarray, spacing: float = 1.0) -> np.ndarray:
     """Return channels ``(mean curvature, Gaussian curvature, shape index)``."""
     z = np.nan_to_num(np.asarray(depth, dtype=np.float64), nan=0.0)
-    zy, zx = np.gradient(z)
-    zyy, zyx = np.gradient(zy)
-    zxy, zxx = np.gradient(zx)
+    if spacing <= 0:
+        raise ValueError("Grid spacing must be positive")
+    zy, zx = np.gradient(z, spacing)
+    zyy, zyx = np.gradient(zy, spacing)
+    zxy, zxx = np.gradient(zx, spacing)
     E = 1.0 + zx * zx
     F = zx * zy
     G = 1.0 + zy * zy

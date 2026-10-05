@@ -3,6 +3,8 @@ data/
 results/runs/
 results/figures/
 results/tables/
+results/toy-current/
+results/tufts-current/
 models/
 *.caffemodel
 *.task

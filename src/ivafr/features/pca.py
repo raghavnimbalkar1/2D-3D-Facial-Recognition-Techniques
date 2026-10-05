@@ -45,10 +45,15 @@ class PCAFeature(FeatureExtractor):
         cum = np.cumsum(full.explained_variance_ratio_)
         n = int(np.searchsorted(cum, variance_keep) + 1)
         n = min(n, max_components, n_available)
-        n = max(n - drop_first_k, 1)
-        self.pca = PCA(n_components=n, random_state=0, svd_solver="full")
-        self.pca.fit(mat)
-        self._dim = n
+        if drop_first_k >= n:
+            raise ValueError("drop_first_k must leave at least one retained component")
+        self.pca = full
+        self.pca.components_ = full.components_[drop_first_k:n].copy()
+        self.pca.explained_variance_ = full.explained_variance_[drop_first_k:n].copy()
+        self.pca.explained_variance_ratio_ = full.explained_variance_ratio_[drop_first_k:n].copy()
+        self.pca.singular_values_ = full.singular_values_[drop_first_k:n].copy()
+        self.pca.n_components_ = n - drop_first_k
+        self._dim = n - drop_first_k
         self._fit = True
         return self
 

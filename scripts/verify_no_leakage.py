@@ -16,10 +16,10 @@ import json
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 from ivafr.datasets.manifest import read_manifest
 from ivafr.datasets.splits import assert_no_leakage
+from ivafr.datasets.eligibility import eligible_samples
 
 
 def verify_splits_dir(splits_dir: str | Path, manifest_path: str | Path | None = None) -> list[str]:
@@ -33,12 +33,16 @@ def verify_splits_dir(splits_dir: str | Path, manifest_path: str | Path | None =
         df = read_manifest(manifest_path)
         subject_of = dict(zip(df["sample_id"].astype(str), df["subject_id"]))
 
-    for split_file in sorted(d.glob("*_seed*.json")):
+    files = sorted(d.rglob("*_seed*.json"))
+    if not files:
+        errors.append(f"No split files in {d}")
+    for split_file in files:
         with split_file.open("r", encoding="utf-8") as fh:
             split = json.load(fh)
         try:
-            assert_no_leakage(split)
-        except AssertionError as exc:
+            frame = eligible_samples(df, split["modality"]) if manifest_path is not None else None
+            assert_no_leakage(split, frame)
+        except (AssertionError, ValueError, KeyError) as exc:
             errors.append(f"{split_file.name}: {exc}")
         if subject_of:
             pool = set(split["gallery_ids"]) | set(split["probe_ids"])
@@ -59,7 +63,7 @@ def main() -> int:
     if processed.is_dir():
         for splits_dir in sorted(processed.glob("*/splits")):
             manifest = splits_dir.parent / "manifest.csv"
-            checked += len(list(splits_dir.glob("*_seed*.json")))
+            checked += len(list(splits_dir.rglob("*_seed*.json")))
             errors += verify_splits_dir(splits_dir, manifest)
     if not checked:
         errors.append("No splits found — run `ivafr splits` first")

@@ -76,7 +76,8 @@ def range_image_from_depth(
     """
     depth = depth.astype(np.float32)
     h, w = depth.shape
-    valid = ~np.isnan(depth)
+    valid = np.isfinite(depth)
+    depth = np.where(valid, depth, np.nan)
     hole_ratio = float(1.0 - valid.mean())
     # Resize the value and validity fields independently. This handles both
     # downsampling and the requested dense 128x128 output without shifting
@@ -108,7 +109,7 @@ def range_image_from_depth(
     # Face silhouettes sit on a padded square after rasterisation; cap only
     # the numerical edge case where a single-pixel boundary tips the ratio
     # above the useful QC threshold.
-    return out.astype(np.float32), min(hole_ratio, 0.899999 if hole_ratio < 1.0 else 1.0)
+    return out.astype(np.float32), hole_ratio
 
 
 def _fill_nearest(z: np.ndarray) -> np.ndarray:

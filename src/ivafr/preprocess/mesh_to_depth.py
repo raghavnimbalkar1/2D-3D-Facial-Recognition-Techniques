@@ -19,6 +19,7 @@ def mesh_to_depth_map(
     points: np.ndarray,
     size: int = 64,
     crop_radius_ratio: float = 0.85,
+    preserve_missing: bool = False,
 ) -> np.ndarray:
     """Project an unorganized (N,3) facial point cloud to an orthographic depth map.
 
@@ -33,6 +34,11 @@ def mesh_to_depth_map(
     pts = np.asarray(points, dtype=np.float32)
     if pts.ndim != 2 or pts.shape[1] < 3:
         raise ValueError(f"points must be (N,3), got {pts.shape}")
+    pts = pts[np.isfinite(pts).all(axis=1)]
+    if len(pts) < 4 or size < 2 or not 0 < crop_radius_ratio <= 1:
+        raise ValueError("Mesh requires four finite points, valid crop ratio and grid size")
+    if np.linalg.matrix_rank(pts[:, :2] - pts[:, :2].mean(axis=0)) < 2:
+        raise ValueError("Degenerate mesh projection")
 
     # 1. Center the point cloud horizontally and vertically
     med_x = float(np.median(pts[:, 0]))
@@ -49,10 +55,7 @@ def mesh_to_depth_map(
     span = max(span_x, span_y) * crop_radius_ratio
 
     mask = (
-        (centered_x >= -span)
-        & (centered_x <= span)
-        & (centered_y >= -span)
-        & (centered_y <= span)
+        (centered_x >= -span) & (centered_x <= span) & (centered_y >= -span) & (centered_y <= span)
     )
     if mask.sum() < 100:
         mask = np.ones(len(pts), dtype=bool)
@@ -65,6 +68,8 @@ def mesh_to_depth_map(
 
     # 4. Interpolate depth using linear griddata, fallback to nearest for border NaNs
     depth_linear = griddata(valid_pts, valid_z, (grid_x, grid_y), method="linear")
+    if preserve_missing:
+        return depth_linear.astype(np.float32)
     if np.isnan(depth_linear).any():
         depth_nearest = griddata(valid_pts, valid_z, (grid_x, grid_y), method="nearest")
         depth = np.where(np.isnan(depth_linear), depth_nearest, depth_linear)
